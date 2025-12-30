@@ -1,10 +1,10 @@
 # voip-stack
 
-> **Production-ready VoIP infrastructure for Apple Silicon Macs, powered by libvirt/QEMU virtualization**
+> **Production-ready VoIP infrastructure for Apple Silicon Macs, powered by Lima/QEMU virtualization**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Apple%20Silicon-lightgrey.svg)](https://www.apple.com/mac/)
-[![libvirt](https://img.shields.io/badge/libvirt-9.0+-blue.svg)](https://libvirt.org/)
+[![Lima](https://img.shields.io/badge/Lima-0.20+-blue.svg)](https://lima-vm.io/)
 [![Ansible](https://img.shields.io/badge/ansible-2.10+-green.svg)](https://www.ansible.com/)
 
 A complete, security-first VoIP platform featuring OpenSIPS, Asterisk, and RTPEngine. Designed for production deployments, development, learning, and as a reference architecture for enterprise VoIP infrastructure.
@@ -15,7 +15,7 @@ A complete, security-first VoIP platform featuring OpenSIPS, Asterisk, and RTPEn
 
 - **Complete VoIP Stack** - OpenSIPS (SIP proxy) + Asterisk (PBX) + RTPEngine (media)
 - **Security-First** - TLS/SRTP encryption, HashiCorp Vault integration, network isolation
-- **Apple Silicon Optimized** - Native ARM64 support via libvirt/QEMU virtualization
+- **Apple Silicon Optimized** - Native ARM64 Debian 12 VMs via Lima/QEMU
 - **Infrastructure as Code** - Ansible-based provisioning and configuration
 - **Comprehensive Testing** - SIPp scenarios, integration tests, functional tests
 - **Full Observability** - Prometheus, Grafana, Loki, Homer SIP capture
@@ -27,7 +27,7 @@ Get up and running in 15 minutes:
 
 ```bash
 # 1. Install prerequisites
-brew bundle --file=Brewfile
+brew install lima ansible
 
 # 2. Clone and setup
 git clone https://github.com/NormB/voip-stack.git ~/voip-stack
@@ -40,24 +40,31 @@ cp .env.example .env
 # 4. Ensure devstack-core is running
 cd ~/devstack-core && ./devstack start --profile standard
 
-# 5. Create and start VoIP VMs
-cd ~/voip-stack/libvirt
-./create-vms.sh create
-./create-vms.sh start
-
-# 6. Provision VMs with Ansible
+# 5. Create and start VoIP VMs (Debian 12 ARM64)
 cd ~/voip-stack
+./scripts/lima-vms.sh create
+
+# 6. Generate Ansible inventory and provision
+./scripts/lima-vms.sh inventory
 ./scripts/ansible-run.sh provision-vms
 
 # 7. Verify installation
 ./tests/run-phase1-tests.sh
 ```
 
-**Access your services:**
-- **SIP Proxy (OpenSIPS):** 192.168.64.10:5060 (UDP), 5061 (TLS)
-- **PBX (Asterisk):** 192.168.64.30:5080 (internal only)
-- **Media (RTPEngine):** 192.168.64.20:10000-20000 (RTP)
-- **Homer SIP Capture:** http://localhost:9080
+**Access your VMs:**
+```bash
+./scripts/lima-vms.sh status           # View VM status and SSH ports
+./scripts/lima-vms.sh shell sip-1      # Shell into sip-1
+./scripts/lima-vms.sh shell media-1    # Shell into media-1
+./scripts/lima-vms.sh shell pbx-1      # Shell into pbx-1
+```
+
+**Services (inside VMs):**
+- **SIP Proxy (OpenSIPS):** sip-1:5060 (UDP), 5061 (TLS)
+- **PBX (Asterisk):** pbx-1:5080 (internal only)
+- **Media (RTPEngine):** media-1:10000-20000 (RTP)
+- **Homer SIP Capture:** http://localhost:9080 (on host)
 
 ## Prerequisites
 
@@ -67,9 +74,11 @@ cd ~/voip-stack
 - 100GB+ free disk space
 - [devstack-core](https://github.com/NormB/devstack-core) running
 
-**Software (auto-installed via Brewfile):**
-- libvirt/QEMU (virtualization)
-- socket_vmnet (VM networking)
+**Software:**
+```bash
+brew install lima ansible sngrep sipsak
+```
+- Lima (VM management with QEMU/HVF)
 - Ansible (provisioning)
 - sngrep, sipsak (VoIP testing)
 
@@ -118,13 +127,13 @@ External SIP Clients
 
 ### Three-Tier Design
 
-| Tier | VM | IP | Component | Network |
-|------|----|----|-----------|---------|
-| **SIP Proxy** | sip-1 | 192.168.64.10 | OpenSIPS 3.4+ | eth0 + eth1 |
-| **PBX** | pbx-1 | 192.168.64.30 | Asterisk 20+ | eth0 only (isolated) |
-| **Media** | media-1 | 192.168.64.20 | RTPEngine | eth0 + eth1 |
+| Tier | VM | Resources | Component | Purpose |
+|------|-----|-----------|-----------|---------|
+| **SIP Proxy** | sip-1 | 2 CPU, 2GB RAM | OpenSIPS 3.4+ | Registration, routing |
+| **Media** | media-1 | 4 CPU, 4GB RAM | RTPEngine | Media relay, NAT traversal |
+| **PBX** | pbx-1 | 2 CPU, 4GB RAM | Asterisk 20+ | Call processing, features |
 
-**Security Note:** The PBX VM has no external network interface, ensuring all external traffic passes through the SIP proxy.
+**VM Access:** All VMs run Debian 12 (Bookworm) ARM64 and are accessed via Lima's SSH tunneling. Use `./scripts/lima-vms.sh shell <vm>` or the generated SSH configs.
 
 ## Roadmap
 
@@ -154,27 +163,48 @@ External SIP Clients
 
 ## Usage
 
-### Management Commands
+### VM Management (Lima)
 
 ```bash
-# Create and start VMs (libvirt)
-cd libvirt && ./create-vms.sh create && ./create-vms.sh start && cd ..
+# Create all VMs (downloads Debian 12 ARM64, starts VMs)
+./scripts/lima-vms.sh create
 
-# Run Ansible playbook
+# VM lifecycle
+./scripts/lima-vms.sh status     # Show VM status and SSH ports
+./scripts/lima-vms.sh start      # Start all VMs
+./scripts/lima-vms.sh stop       # Stop all VMs
+./scripts/lima-vms.sh destroy    # Destroy all VMs (with confirmation)
+
+# Access VMs
+./scripts/lima-vms.sh shell sip-1     # Shell into sip-1
+./scripts/lima-vms.sh shell media-1   # Shell into media-1
+./scripts/lima-vms.sh shell pbx-1     # Shell into pbx-1
+
+# Generate Ansible inventory from running VMs
+./scripts/lima-vms.sh inventory
+```
+
+### Ansible Provisioning
+
+```bash
+# Run full provisioning
 ./scripts/ansible-run.sh provision-vms
-./scripts/ansible-run.sh provision-vms --limit sip_proxies
-./scripts/ansible-run.sh provision-vms --tags opensips
 
-# Run tests
+# Target specific groups
+./scripts/ansible-run.sh provision-vms --limit sip_proxies
+./scripts/ansible-run.sh provision-vms --limit media_servers
+
+# Target specific roles
+./scripts/ansible-run.sh provision-vms --tags opensips
+./scripts/ansible-run.sh provision-vms --tags asterisk
+```
+
+### Running Tests
+
+```bash
+# Run all Phase 1 tests
 ./tests/run-phase1-tests.sh
 ./tests/run-phase1-tests.sh --verbose
-
-# libvirt VM management
-cd libvirt
-./create-vms.sh status
-./create-vms.sh start
-./create-vms.sh stop
-virsh -c qemu:///session list --all
 ```
 
 ### Testing
@@ -186,22 +216,19 @@ virsh -c qemu:///session list --all
 # Individual test categories
 ./tests/integration/test-vault-integration.sh
 ./tests/functional/test-basic-call.sh
-
-# SIPp load testing
-sipp 192.168.64.10:5060 -sf tests/sipp/scenarios/uac.xml -s 1002 -m 1
 ```
 
 ### SIP Debugging
 
 ```bash
-# Monitor SIP traffic on Mac
-sngrep -d any port 5060
+# Monitor SIP traffic inside VM
+./scripts/lima-vms.sh shell sip-1
+sngrep -d eth0 port 5060
 
-# Monitor on VMs
-ssh admin@192.168.64.10 'sngrep -d eth0 port 5060'
-
-# Test registration
-sipsak -U -C sip:test@192.168.64.10 -s sip:1001@192.168.64.10
+# Check service status
+limactl shell sip-1 -- systemctl status opensips
+limactl shell pbx-1 -- systemctl status asterisk
+limactl shell media-1 -- systemctl status rtpengine
 ```
 
 ## Documentation
@@ -245,19 +272,24 @@ voip-stack/
 ├── ansible/              # Infrastructure as Code
 │   ├── roles/           # Component roles
 │   ├── playbooks/       # Provisioning playbooks
-│   └── inventory/       # VM inventory
+│   └── inventory/       # VM inventory (generated by lima-vms.sh)
 ├── configs/             # Configuration templates
 │   └── templates/       # Jinja2 templates
-├── docs/                # Documentation (8,000+ lines)
+├── docs/                # Documentation
 │   ├── guides/          # How-to guides
 │   └── reference/       # Technical reference
+├── lima/                # Lima VM configurations (YAML)
+│   ├── sip-1.yaml       # SIP proxy VM config
+│   ├── media-1.yaml     # Media server VM config
+│   └── pbx-1.yaml       # PBX VM config
 ├── scripts/             # Helper scripts
+│   └── lima-vms.sh      # VM lifecycle management
 ├── tests/               # Test framework
 │   ├── integration/     # Connectivity tests
 │   ├── functional/      # SIP flow tests
 │   ├── security/        # TLS/auth tests
 │   └── sipp/            # Load test scenarios
-└── vms/                 # VM-specific configs
+└── archive/             # Archived implementations
 ```
 
 ## Contributing
@@ -286,8 +318,8 @@ Built with excellent open-source software:
 - [HashiCorp Vault](https://www.vaultproject.io/) - Secrets management
 - [TimescaleDB](https://www.timescale.com/) - Time-series database
 - [devstack-core](https://github.com/NormB/devstack-core) - Infrastructure services
-- [libvirt](https://libvirt.org/) - Virtualization API
-- [QEMU](https://www.qemu.org/) - Machine emulator
+- [Lima](https://lima-vm.io/) - Linux virtual machines on macOS
+- [QEMU](https://www.qemu.org/) - Machine emulator with Apple HVF
 
 Special thanks to the VoIP open-source community.
 
@@ -306,4 +338,4 @@ This project follows these principles:
 
 **Questions or feedback?** [Open an issue](https://github.com/NormB/voip-stack/issues)
 
-**Development Platform:** macOS (Apple Silicon) with libvirt/QEMU virtualization
+**Development Platform:** macOS (Apple Silicon) with Lima/QEMU (Debian 12 ARM64 VMs)

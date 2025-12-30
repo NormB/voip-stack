@@ -1,12 +1,12 @@
 # Installation Guide
 
-Complete setup instructions for voip-stack.
+Complete setup instructions for voip-stack using Lima VMs on Apple Silicon.
 
 ---
 
-## Virtualization
+## Overview
 
-voip-stack uses **libvirt/QEMU** for VM management, providing full CLI automation and CI/CD compatibility.
+voip-stack uses **Lima** for VM management, providing native Debian 12 ARM64 virtual machines with QEMU and Apple's Hypervisor Framework (HVF) for near-native performance.
 
 ---
 
@@ -48,117 +48,164 @@ cp .env.example .env
 
 ## Installation Steps
 
-Full CLI automation using libvirt, QEMU, and cloud-init.
-
-### Step 1: Install Dependencies
+### Step 1: Install Lima and Dependencies
 
 ```bash
-# Install QEMU, libvirt, and socket_vmnet
-brew install qemu libvirt socket_vmnet
+# Install Lima and other tools
+brew install lima ansible sngrep sipsak
 
 # Verify installation
-qemu-system-aarch64 --version
-virsh --version
+limactl --version
+ansible --version
 ```
 
-### Step 2: Setup Networking
-
-socket_vmnet provides rootless vmnet.framework networking for QEMU.
+### Step 2: Clone voip-stack
 
 ```bash
-cd ~/voip-stack/libvirt
-
-# Install networking services (requires sudo)
-sudo ./setup-socket-vmnet.sh
-
-# Verify sockets are created
-ls -la /opt/homebrew/var/run/socket_vmnet*
+cd ~
+git clone https://github.com/NormB/voip-stack.git
+cd voip-stack
 ```
 
 ### Step 3: Create VMs
 
 ```bash
-cd ~/voip-stack/libvirt
-
-# Create all VMs (downloads Debian image, creates disks, defines VMs)
-./create-vms.sh create
+# Create all VoIP VMs (downloads Debian 12 ARM64 image)
+./scripts/lima-vms.sh create
 ```
 
-Or use Ansible:
+This creates three Debian 12 (Bookworm) ARM64 VMs:
+
+| VM | CPUs | Memory | Disk | Purpose |
+|----|------|--------|------|---------|
+| sip-1 | 2 | 2GB | 20GB | OpenSIPS SIP proxy |
+| media-1 | 4 | 4GB | 20GB | RTPEngine media server |
+| pbx-1 | 2 | 4GB | 20GB | Asterisk PBX |
+
+### Step 4: Verify VM Status
 
 ```bash
-cd ~/voip-stack/ansible
-ansible-playbook playbooks/manage-libvirt-vms.yml -e action=create
+./scripts/lima-vms.sh status
 ```
 
-### Step 4: Start VMs
+Expected output:
+```
+═══ voip-stack VM Status (Lima/Debian) ═══
 
-```bash
-# Start all VMs
-./create-vms.sh start
-
-# Or with Ansible
-ansible-playbook playbooks/manage-libvirt-vms.yml -e action=start
+NAME       STATUS     SSH                CPUS    MEMORY    DISK
+media-1    Running    127.0.0.1:53569    4       4GiB      20GiB
+pbx-1      Running    127.0.0.1:53712    2       4GiB      20GiB
+sip-1      Running    127.0.0.1:53319    2       2GiB      20GiB
 ```
 
-### Step 5: Verify VM Access
+### Step 5: Generate Ansible Inventory
 
 ```bash
-# Wait 30-60 seconds for boot, then SSH
-ssh debian@192.168.64.10  # sip-1
-ssh debian@192.168.64.30  # pbx-1
-ssh debian@192.168.64.20  # media-1
+./scripts/lima-vms.sh inventory
 ```
 
-### Step 6: Deploy VoIP Components
+This generates `ansible/inventory/lima.yml` with SSH configuration for each VM.
+
+### Step 6: Provision with Ansible
 
 ```bash
-cd ~/voip-stack
 ./scripts/ansible-run.sh provision-vms
 ```
 
-For detailed libvirt documentation, see: [libvirt/README.md](../../libvirt/README.md)
+This installs and configures:
+- OpenSIPS on sip-1
+- RTPEngine on media-1
+- Asterisk on pbx-1
 
 ---
 
 ## Verification
 
+### Check VM Access
+
+```bash
+# Shell into VMs
+./scripts/lima-vms.sh shell sip-1
+./scripts/lima-vms.sh shell media-1
+./scripts/lima-vms.sh shell pbx-1
+
+# Or use limactl directly
+limactl shell sip-1
+```
+
 ### Check Services
 
 ```bash
-# Check VMs are running
-virsh -c qemu:///session list --all
+# OpenSIPS status
+limactl shell sip-1 -- systemctl status opensips
 
-# SSH to each VM
-ssh debian@192.168.64.10  # sip-1
-ssh debian@192.168.64.30  # pbx-1
-ssh debian@192.168.64.20  # media-1
+# RTPEngine status
+limactl shell media-1 -- systemctl status rtpengine
 
-# Check service status
-ssh debian@192.168.64.10 "systemctl status opensips"
-ssh debian@192.168.64.30 "systemctl status asterisk"
-ssh debian@192.168.64.20 "systemctl status rtpengine"
+# Asterisk status
+limactl shell pbx-1 -- systemctl status asterisk
 ```
 
 ### Run Tests
 
 ```bash
-cd ~/voip-stack
 ./tests/run-phase1-tests.sh
 ```
 
-### Test SIP Registration
+---
+
+## VM Management Commands
 
 ```bash
-# Basic SIPp test
-sipp 192.168.64.10:5060 -sf tests/sipp/scenarios/register.xml -m 1
+# Status
+./scripts/lima-vms.sh status
+
+# Start/Stop
+./scripts/lima-vms.sh start
+./scripts/lima-vms.sh stop
+
+# Shell access
+./scripts/lima-vms.sh shell <vm-name>
+
+# Generate Ansible inventory
+./scripts/lima-vms.sh inventory
+
+# Destroy VMs (with confirmation)
+./scripts/lima-vms.sh destroy
 ```
+
+---
+
+## SSH Access
+
+Lima provides SSH access through auto-assigned ports. Access VMs using:
+
+```bash
+# Using lima-vms.sh wrapper
+./scripts/lima-vms.sh shell sip-1
+
+# Using limactl directly
+limactl shell sip-1
+
+# Using SSH with generated config
+ssh -F ~/.lima/sip-1/ssh.config lima-sip-1
+```
+
+---
+
+## Network Configuration
+
+Lima VMs use user-mode networking (no sudo required):
+
+- VMs can access the host via `host.lima.internal`
+- Host services (devstack-core) are accessible from VMs
+- VMs communicate with each other via the host network
 
 ---
 
 ## Next Steps
 
-- [Testing Guide](TESTING.md) - Comprehensive testing procedures
+- [Ansible Provisioning](ANSIBLE-PROVISIONING.md) - Detailed provisioning guide
 - [Troubleshooting](TROUBLESHOOTING.md) - Common issues and solutions
 - [Architecture Overview](../ARCHITECTURE.md) - Understand the system design
 
@@ -166,26 +213,28 @@ sipp 192.168.64.10:5060 -sf tests/sipp/scenarios/register.xml -m 1
 
 ## Troubleshooting Quick Reference
 
-**VMs won't start**:
+**VM won't start**:
 ```bash
-virsh -c qemu:///session list --all  # Check VM status
-virsh -c qemu:///session start sip-1  # Try starting manually
-ls /opt/homebrew/var/run/socket_vmnet*  # Check networking
+limactl list                        # Check VM status
+limactl stop sip-1 && limactl start sip-1  # Restart VM
 ```
 
-**SSH connection refused**:
+**SSH connection issues**:
 ```bash
-ping 192.168.64.10  # Test connectivity
-# Wait 60-90 seconds for cloud-init to complete
+# Check SSH port
+limactl list | grep sip-1
+
+# Test SSH directly
+ssh -F ~/.lima/sip-1/ssh.config lima-sip-1
 ```
 
 **Ansible fails**:
 ```bash
-# Check Vault is accessible
-curl http://192.168.64.1:8200/v1/sys/health
+# Regenerate inventory
+./scripts/lima-vms.sh inventory
 
-# Check PostgreSQL
-psql -h 192.168.64.1 -U postgres -l
+# Check Vault is accessible
+curl http://localhost:8200/v1/sys/health
 ```
 
 **Full troubleshooting**: See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
@@ -193,5 +242,5 @@ psql -h 192.168.64.1 -U postgres -l
 ---
 
 **Document Status**: Complete
-**Last Updated**: 2025-12-17
-**Tested With**: macOS Sequoia 15.1, libvirt/QEMU, Debian 12 (Bookworm)
+**Last Updated**: 2025-12-30
+**Tested With**: macOS Sequoia 15.2, Lima 0.24+, Debian 12 (Bookworm) ARM64

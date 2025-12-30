@@ -22,7 +22,7 @@
 
 ## Overview
 
-voip-stack is a production-ready VoIP infrastructure designed to run on macOS using libvirt/QEMU virtualization, integrating with [devstack-core](https://github.com/NormB/devstack-core) for infrastructure dependencies.
+voip-stack is a production-ready VoIP infrastructure designed to run on macOS Apple Silicon using Lima/QEMU virtualization with Debian 12 ARM64 VMs, integrating with [devstack-core](https://github.com/NormB/devstack-core) for infrastructure dependencies.
 
 ### Key Characteristics
 
@@ -149,11 +149,15 @@ voip-stack is a production-ready VoIP infrastructure designed to run on macOS us
 
 ### VM Specifications
 
-| VM Name | Role | vCPUs | RAM | Disk | IP | Interfaces |
-|---------|------|-------|-----|------|-----|------------|
-| sip-1 | SIP Proxy | 2 | 2GB | 20GB | 192.168.64.10 | eth0, eth1 |
-| pbx-1 | PBX | 2 | 4GB | 30GB | 192.168.64.30 | eth0 only |
-| media-1 | Media Proxy | 2 | 2GB | 30GB | 192.168.64.20 | eth0, eth1 |
+VMs run Debian 12 (Bookworm) ARM64 via Lima with QEMU/HVF:
+
+| VM Name | Role | vCPUs | RAM | Disk | OS | Access |
+|---------|------|-------|-----|------|-----|--------|
+| sip-1 | SIP Proxy | 2 | 2GB | 20GB | Debian 12 ARM64 | `limactl shell sip-1` |
+| media-1 | Media Proxy | 4 | 4GB | 20GB | Debian 12 ARM64 | `limactl shell media-1` |
+| pbx-1 | PBX | 2 | 4GB | 20GB | Debian 12 ARM64 | `limactl shell pbx-1` |
+
+Lima provides user-mode networking (no sudo required) with VMs accessing host services via `host.lima.internal`.
 
 ---
 
@@ -459,16 +463,27 @@ See [NETWORK_TOPOLOGY.md](reference/NETWORK_TOPOLOGY.md) for complete port mappi
 ### Infrastructure
 
 - **Host**: Mac with Apple Silicon
-- **Virtualization**: libvirt/QEMU
+- **Virtualization**: Lima with QEMU/HVF (Hypervisor.framework)
+- **Guest OS**: Debian 12 (Bookworm) ARM64
 - **Containers**: Docker (via devstack-core/Colima)
 - **Provisioning**: Ansible
 
 ### Automation
 
-- **VM Creation**: libvirt with cloud-init
+- **VM Creation**: Lima with cloud-init provisioning
 - **Software Install**: Ansible roles
 - **Configuration**: Jinja2 templates
 - **Testing**: Automated test suite
+
+### VM Management
+
+```bash
+./scripts/lima-vms.sh create     # Create VMs
+./scripts/lima-vms.sh status     # Check status
+./scripts/lima-vms.sh shell <vm> # Access VM
+./scripts/lima-vms.sh inventory  # Generate Ansible inventory
+./scripts/lima-vms.sh destroy    # Destroy VMs
+```
 
 ### Phases
 
@@ -507,5 +522,6 @@ Key decisions include:
 ---
 
 **Document Status**: Complete
-**Last Updated**: 2025-12-16
+**Last Updated**: 2025-12-30
 **Phase**: 1 (Alpha)
+**Virtualization**: Lima/QEMU with Debian 12 ARM64
