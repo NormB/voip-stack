@@ -305,6 +305,41 @@ ansible/inventory/
 
 3. **Multiple Networks**: Unlike libvirt, vagrant-qemu doesn't support bridged networking as easily. All VMs use private_network.
 
+4. **Box Compatibility**: Some Vagrant boxes may have boot issues with vagrant-qemu on Apple Silicon. The `generic/debian12` ARM64 box is recommended but may require extended boot timeouts.
+
+## Known Issues
+
+### SSH Timeout During Boot
+
+If VMs show "timeout during server version negotiating" or "Connection reset by peer", the VM may be:
+- Still booting (can take 5-10 minutes on first boot)
+- Using an incompatible box (ensure ARM64 architecture)
+
+**Solutions:**
+1. Increase boot timeout in Vagrantfile (currently set to 1200s)
+2. Try a different ARM64-compatible box
+3. Verify QEMU supports HVF: `qemu-system-aarch64 -accel help`
+
+### Alternative Approaches
+
+If vagrant-qemu proves unreliable, consider:
+
+1. **VirtualBox 7.1+**: Now supports Apple Silicon (as of September 2024)
+   ```bash
+   brew install --cask virtualbox
+   vagrant up --provider=virtualbox
+   ```
+
+2. **UTM with vagrant-utm**: Native macOS virtualization
+   - Install UTM from App Store
+   - `vagrant plugin install vagrant_utm`
+
+3. **Lima/Colima**: Lightweight alternative with QEMU backend
+   ```bash
+   brew install colima
+   colima start --vm-type=qemu --arch=aarch64
+   ```
+
 ## References
 
 - [vagrant-qemu GitHub](https://github.com/ppggff/vagrant-qemu)
