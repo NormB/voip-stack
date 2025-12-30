@@ -33,6 +33,9 @@ credentials/
 .vagrant/
 packer_cache/
 
+# Archived/legacy implementations (may contain large files)
+archive/libvirt-legacy/images/
+
 # Logs
 *.log
 logs/
