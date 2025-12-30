@@ -1,11 +1,11 @@
 # Archived Files
 
-This directory contains legacy implementations that have been superseded by newer approaches.
+This directory contains legacy implementations that have been superseded.
 
 ## libvirt-legacy/
 
 **Archived**: 2025-12-30
-**Replaced by**: `vagrant/` directory with vagrant-qemu
+**Replaced by**: Lima (`scripts/lima-vms.sh`)
 
 The libvirt implementation was the original VM infrastructure using:
 - libvirt/QEMU with socket_vmnet for networking
@@ -18,27 +18,10 @@ The libvirt implementation was the original VM infrastructure using:
 2. **Complex Setup**: socket_vmnet required sudo privileges and daemon configuration
 3. **Limited Portability**: Tight coupling to macOS-specific paths and configurations
 
-### Migration
+### Current Approach
 
-The new Vagrant-based approach provides:
-- Simpler setup (`vagrant plugin install vagrant-qemu`)
-- Declarative infrastructure (Vagrantfile)
-- Built-in Ansible provisioner
-- Snapshot support
-- Better cross-platform compatibility
-
-See `vagrant/README.md` for the new approach.
-
-### Restoring (if needed)
-
-If you need to restore the libvirt setup:
-
+Use Lima for Debian VMs on Apple Silicon:
 ```bash
-# Move back to original location
-mv archive/libvirt-legacy libvirt
-
-# Install prerequisites
-brew install libvirt qemu socket_vmnet
-
-# Follow libvirt/README.md for setup
+./scripts/lima-vms.sh create
+./scripts/lima-vms.sh status
 ```

@@ -22,7 +22,7 @@ A comprehensive guide for developers new to voip-stack. This document covers eve
 
 ## Overview
 
-**voip-stack** is a production-ready VoIP infrastructure platform for Apple Silicon Macs using libvirt/QEMU virtualization. It provides a three-tier VoIP architecture with:
+**voip-stack** is a production-ready VoIP infrastructure platform for Apple Silicon Macs using Lima/QEMU virtualization with Debian 12 ARM64 VMs. It provides a three-tier VoIP architecture with:
 
 - **SIP Proxy** (OpenSIPS) - Call routing and registration
 - **PBX** (Asterisk) - Call processing and dialplans
@@ -36,7 +36,7 @@ The stack integrates with **devstack-core** which provides supporting infrastruc
 |--------|-------------|
 | **Version** | 0.1.0-alpha (Phase 1) |
 | **Platform** | macOS with Apple Silicon (M1/M2/M3/M4) |
-| **Virtualization** | libvirt/QEMU with socket_vmnet networking |
+| **Virtualization** | Lima with QEMU/HVF (Debian 12 ARM64) |
 | **Provisioning** | Ansible (Infrastructure as Code) |
 | **Security** | TLS/SRTP encryption, Vault for secrets |
 
@@ -64,13 +64,14 @@ The stack integrates with **devstack-core** which provides supporting infrastruc
 │  └─────────────────────────────────────────────────────────────────┘    │
 │                                                                          │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                 libvirt VMs (socket_vmnet)                       │    │
+│  │                 Lima VMs (QEMU/HVF)                              │    │
+│  │                 Debian 12 (Bookworm) ARM64                       │    │
 │  │                                                                  │    │
 │  │   ┌───────────────┐  ┌───────────────┐  ┌───────────────┐       │    │
 │  │   │    sip-1      │  │    pbx-1      │  │   media-1     │       │    │
 │  │   │  OpenSIPS     │  │   Asterisk    │  │  RTPEngine    │       │    │
-│  │   │ 192.168.64.10 │  │ 192.168.64.30 │  │ 192.168.64.20 │       │    │
-│  │   │  eth0 + eth1  │  │   eth0 only   │  │  eth0 + eth1  │       │    │
+│  │   │ 2 CPU / 2GB   │  │ 2 CPU / 4GB   │  │ 4 CPU / 4GB   │       │    │
+│  │   │ SSH: auto     │  │ SSH: auto     │  │ SSH: auto     │       │    │
 │  │   └───────────────┘  └───────────────┘  └───────────────┘       │    │
 │  │                         (voip-stack)                             │    │
 │  └─────────────────────────────────────────────────────────────────┘    │
@@ -80,12 +81,17 @@ The stack integrates with **devstack-core** which provides supporting infrastruc
 
 ### Network Architecture
 
-| Network | Subnet | Purpose |
-|---------|--------|---------|
-| **Internal (eth0)** | 192.168.64.0/24 | VM-to-VM, VM-to-devstack, management |
-| **External (eth1)** | Bridged to LAN | External SIP/RTP (sip-1 and media-1 only) |
+Lima uses user-mode networking (no sudo required):
+- VMs access host services via `host.lima.internal`
+- SSH access via auto-assigned localhost ports
+- devstack-core services reachable from VMs
 
-**Security Note**: The PBX (pbx-1) intentionally has NO external network interface. All external traffic must pass through the SIP proxy.
+**Access VMs:**
+```bash
+./scripts/lima-vms.sh shell sip-1     # Shell into sip-1
+limactl shell media-1                 # Alternative access
+ssh -F ~/.lima/pbx-1/ssh.config lima-pbx-1  # Direct SSH
+```
 
 ---
 
@@ -102,16 +108,12 @@ The stack integrates with **devstack-core** which provides supporting infrastruc
 Install via Homebrew:
 
 ```bash
-cd ~/voip-stack
-brew bundle --file=Brewfile
+brew install lima ansible sngrep sipsak
 ```
 
 This installs:
-- **qemu** - VM emulation
-- **libvirt** - Virtualization API
-- **socket_vmnet** - VM networking (vmnet.framework)
+- **lima** - Linux VM manager with QEMU/HVF
 - **ansible** - Infrastructure provisioning
-- **ansible-lint** - Playbook validation
 - **sngrep** - SIP message visualization
 - **sipsak** - SIP testing utility
 
@@ -140,24 +142,22 @@ cd ~/devstack-core
 ./devstack vault-bootstrap
 ```
 
-### 2. Setup VM Networking (One-Time)
+### 2. Create VMs with Lima
 
 ```bash
-cd ~/voip-stack/libvirt
-sudo ./setup-socket-vmnet.sh
+cd ~/voip-stack
+./scripts/lima-vms.sh create
 ```
 
-### 3. Create and Start VMs
+### 3. Generate Ansible Inventory
 
 ```bash
-./create-vms.sh create
-./create-vms.sh start
+./scripts/lima-vms.sh inventory
 ```
 
 ### 4. Provision with Ansible
 
 ```bash
-cd ~/voip-stack
 ./scripts/ansible-run.sh provision-vms
 ```
 
@@ -170,15 +170,16 @@ cd ~/voip-stack
 ### Quick Connectivity Test
 
 ```bash
-# Ping VMs
-ping -c 1 192.168.64.10  # sip-1
-ping -c 1 192.168.64.20  # media-1
-ping -c 1 192.168.64.30  # pbx-1
+# Check VM status
+./scripts/lima-vms.sh status
 
-# SSH into VMs
-ssh voip@192.168.64.10   # sip-1
-ssh voip@192.168.64.30   # pbx-1
-ssh voip@192.168.64.20   # media-1
+# Shell into VMs
+./scripts/lima-vms.sh shell sip-1
+./scripts/lima-vms.sh shell media-1
+./scripts/lima-vms.sh shell pbx-1
+
+# Or use limactl directly
+limactl shell sip-1
 ```
 
 ---
@@ -187,12 +188,13 @@ ssh voip@192.168.64.20   # media-1
 
 ### Playbook Locations
 
-All playbooks are in: `/Users/gator/voip-stack/ansible/playbooks/`
+All playbooks are in: `~/voip-stack/ansible/playbooks/`
 
 | Playbook | File | Purpose |
 |----------|------|---------|
 | **VM Provisioning** | `provision-vms.yml` | Main provisioning orchestrator |
-| **VM Lifecycle** | `manage-libvirt-vms.yml` | Create/start/stop/destroy VMs |
+
+**Note:** VM lifecycle is managed by Lima via `./scripts/lima-vms.sh`, not Ansible.
 
 ### provision-vms.yml
 
@@ -244,27 +246,29 @@ Media Servers (media_servers group):
 ./scripts/ansible-run.sh provision-vms -vv
 ```
 
-### manage-libvirt-vms.yml
+### Lima VM Management
 
-**Location**: `ansible/playbooks/manage-libvirt-vms.yml`
-
-Manages VM lifecycle via libvirt:
+VM lifecycle is managed by the Lima wrapper script:
 
 ```bash
-# Create VMs (download image, create disks, define)
-ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=create
+# Create VMs (downloads Debian 12 ARM64, creates VMs)
+./scripts/lima-vms.sh create
 
-# Start all VMs
-ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=start
-
-# Stop VMs gracefully
-ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=stop
-
-# Destroy VMs and delete disks
-ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=destroy
+# Start/stop VMs
+./scripts/lima-vms.sh start
+./scripts/lima-vms.sh stop
 
 # Check status
-ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=status
+./scripts/lima-vms.sh status
+
+# Shell into VM
+./scripts/lima-vms.sh shell sip-1
+
+# Generate Ansible inventory
+./scripts/lima-vms.sh inventory
+
+# Destroy VMs (with confirmation)
+./scripts/lima-vms.sh destroy
 ```
 
 ### Ansible Roles Reference
@@ -293,11 +297,15 @@ ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=status
 
 ### VM Specifications
 
-| VM | Hostname | IP Address | RAM | vCPUs | Disk | Networks |
-|----|----------|------------|-----|-------|------|----------|
-| **sip-1** | sip-1.voip.local | 192.168.64.10 | 2GB | 2 | 20GB | eth0 + eth1 |
-| **pbx-1** | pbx-1.voip.local | 192.168.64.30 | 4GB | 2 | 30GB | eth0 only |
-| **media-1** | media-1.voip.local | 192.168.64.20 | 4GB | 4 | 30GB | eth0 + eth1 |
+All VMs run Debian 12 (Bookworm) ARM64 via Lima:
+
+| VM | Hostname | CPUs | RAM | Disk | Purpose |
+|----|----------|------|-----|------|---------|
+| **sip-1** | sip-1 | 2 | 2GB | 20GB | OpenSIPS SIP proxy |
+| **media-1** | media-1 | 4 | 4GB | 20GB | RTPEngine media server |
+| **pbx-1** | pbx-1 | 2 | 4GB | 20GB | Asterisk PBX |
+
+**Access:** `./scripts/lima-vms.sh shell <vm-name>` or `limactl shell <vm-name>`
 
 ### sip-1 Services (SIP Proxy)
 
@@ -311,8 +319,8 @@ ansible-playbook ansible/playbooks/manage-libvirt-vms.yml -e action=status
 
 **Check service status**:
 ```bash
-ssh voip@192.168.64.10 'systemctl status opensips'
-ssh voip@192.168.64.10 'opensipsctl fifo get_statistics all'
+limactl shell sip-1 -- systemctl status opensips
+limactl shell sip-1 -- opensipsctl fifo get_statistics all
 ```
 
 ### pbx-1 Services (PBX)
@@ -326,9 +334,9 @@ ssh voip@192.168.64.10 'opensipsctl fifo get_statistics all'
 
 **Check service status**:
 ```bash
-ssh voip@192.168.64.30 'systemctl status asterisk'
-ssh voip@192.168.64.30 'asterisk -rx "core show channels"'
-ssh voip@192.168.64.30 'asterisk -rx "pjsip show endpoints"'
+limactl shell pbx-1 -- systemctl status asterisk
+limactl shell pbx-1 -- asterisk -rx "core show channels"
+limactl shell pbx-1 -- asterisk -rx "pjsip show endpoints"
 ```
 
 ### media-1 Services (Media Proxy)
@@ -342,9 +350,9 @@ ssh voip@192.168.64.30 'asterisk -rx "pjsip show endpoints"'
 
 **Check service status**:
 ```bash
-ssh voip@192.168.64.20 'systemctl status rtpengine'
-ssh voip@192.168.64.20 'lsmod | grep xt_RTPENGINE'
-ssh voip@192.168.64.20 'rtpengine-ctl list sessions'
+limactl shell media-1 -- systemctl status rtpengine
+limactl shell media-1 -- lsmod | grep xt_RTPENGINE
+limactl shell media-1 -- rtpengine-ctl list sessions
 ```
 
 ### Service Dependencies
@@ -381,11 +389,11 @@ cd ~/devstack-core
 ./devstack start --profile standard
 
 # 2. Start VoIP VMs
-cd ~/voip-stack/libvirt
-./create-vms.sh start
+cd ~/voip-stack
+./scripts/lima-vms.sh start
 
-# 3. Verify connectivity
-ping -c 1 192.168.64.10
+# 3. Verify VMs are running
+./scripts/lima-vms.sh status
 ```
 
 ### Making Configuration Changes
@@ -418,12 +426,13 @@ sipsak -U -C sip:test@192.168.64.10 -s sip:1001@192.168.64.10
 ### Monitoring and Debugging
 
 ```bash
-# Watch SIP traffic in real-time
-sngrep -d any port 5060
+# Watch SIP traffic inside VM
+./scripts/lima-vms.sh shell sip-1
+sngrep -d eth0 port 5060
 
 # View service logs
-ssh voip@192.168.64.10 'journalctl -u opensips -f'
-ssh voip@192.168.64.30 'journalctl -u asterisk -f'
+limactl shell sip-1 -- journalctl -u opensips -f
+limactl shell pbx-1 -- journalctl -u asterisk -f
 
 # Access Grafana dashboards
 open http://localhost:3001
@@ -436,8 +445,7 @@ open http://localhost:9080
 
 ```bash
 # Stop VMs
-cd ~/voip-stack/libvirt
-./create-vms.sh stop
+./scripts/lima-vms.sh stop
 
 # Stop devstack-core (optional)
 cd ~/devstack-core
@@ -447,17 +455,14 @@ cd ~/devstack-core
 ### Rebuilding VMs
 
 ```bash
-cd ~/voip-stack/libvirt
-
 # Destroy existing VMs
-./create-vms.sh destroy
+./scripts/lima-vms.sh destroy
 
 # Recreate from scratch
-./create-vms.sh create
-./create-vms.sh start
+./scripts/lima-vms.sh create
 
 # Re-provision
-cd ~/voip-stack
+./scripts/lima-vms.sh inventory
 ./scripts/ansible-run.sh provision-vms
 ```
 
@@ -498,13 +503,12 @@ RTP_PORT_MAX=20000
 
 ### Ansible Inventory
 
-**File**: `ansible/inventory/development.yml`
+**File**: `ansible/inventory/lima.yml` (generated by `./scripts/lima-vms.sh inventory`)
 
 Defines:
-- VM hostnames and IP addresses
+- VM hostnames and SSH configurations
 - Group memberships (sip_proxies, pbx_servers, media_servers)
 - Component enablement flags
-- Network interface assignments
 
 ### Global Ansible Variables
 
@@ -517,21 +521,19 @@ Contains:
 - Security settings
 - Monitoring configuration
 
-### VM Definitions
+### Lima VM Configurations
 
-**Location**: `libvirt/domains/`
+**Location**: `lima/`
 
-- `sip-1.xml` - SIP proxy VM definition
-- `pbx-1.xml` - PBX VM definition
-- `media-1.xml` - Media proxy VM definition
+- `sip-1.yaml` - SIP proxy VM config (2 CPU, 2GB RAM)
+- `media-1.yaml` - Media server VM config (4 CPU, 4GB RAM)
+- `pbx-1.yaml` - PBX VM config (2 CPU, 4GB RAM)
 
-### Cloud-init Configuration
-
-**Location**: `libvirt/cloud-init/`
-
-- `user-data.yaml.tpl` - User setup, SSH keys, packages
-- `meta-data.yaml.tpl` - Instance metadata
-- `network-config-*.yaml` - Per-VM network configuration
+Each YAML file defines:
+- Debian 12 ARM64 cloud image
+- Resource allocation (CPU, memory, disk)
+- Provisioning script (packages, hostname)
+- SSH access configuration
 
 ---
 
@@ -601,41 +603,43 @@ sipp 192.168.64.10:5060 -sf tests/sipp/scenarios/uac.xml -s 1002 -m 1
 
 ```bash
 # Check VM status
-virsh -c qemu:///session list --all
+limactl list
 
-# Check socket_vmnet
-ls -la /opt/homebrew/var/run/socket_vmnet*
+# Check specific VM
+limactl info sip-1
 
-# Restart socket_vmnet if needed
-sudo launchctl unload /Library/LaunchDaemons/io.github.lima-vm.socket_vmnet.plist
-sudo launchctl load /Library/LaunchDaemons/io.github.lima-vm.socket_vmnet.plist
+# Stop and restart VM
+limactl stop sip-1
+limactl start sip-1
 
-# Check libvirt logs
-cat ~/.local/share/libvirt/qemu/log/*
+# Check Lima logs
+cat ~/.lima/sip-1/ha.stderr.log
 ```
 
-### Can't SSH to VM
+### Can't Access VM
 
 ```bash
 # Check VM is running
-virsh -c qemu:///session list
+limactl list
 
-# Check IP assignment (via console)
-virsh -c qemu:///session console sip-1
-# Login and check: ip addr show
+# Try shell access
+limactl shell sip-1
 
-# Verify SSH key
-ssh -v voip@192.168.64.10
+# Check SSH config
+cat ~/.lima/sip-1/ssh.config
+
+# Direct SSH with verbose
+ssh -v -F ~/.lima/sip-1/ssh.config lima-sip-1
 ```
 
 ### Service Not Running
 
 ```bash
 # Check service status
-ssh voip@192.168.64.10 'systemctl status opensips'
+limactl shell sip-1 -- systemctl status opensips
 
 # View logs
-ssh voip@192.168.64.10 'journalctl -u opensips -n 100'
+limactl shell sip-1 -- journalctl -u opensips -n 100
 
 # Re-run Ansible for specific service
 ./scripts/ansible-run.sh provision-vms --limit sip_proxies --tags opensips
@@ -658,14 +662,12 @@ psql -h localhost -U postgres -c "SELECT 1"
 ### SIP Registration Fails
 
 ```bash
-# Monitor SIP traffic
-sngrep -d any port 5060
-
-# Test with sipsak
-sipsak -U -C sip:test@192.168.64.10 -s sip:1001@192.168.64.10
+# Monitor SIP traffic inside VM
+limactl shell sip-1
+sngrep -d eth0 port 5060
 
 # Check OpenSIPS logs
-ssh voip@192.168.64.10 'journalctl -u opensips -f'
+limactl shell sip-1 -- journalctl -u opensips -f
 
 # Check Homer for SIP captures
 open http://localhost:9080
@@ -675,10 +677,10 @@ open http://localhost:9080
 
 ```bash
 # Check module
-ssh voip@192.168.64.20 'lsmod | grep xt_RTPENGINE'
+limactl shell media-1 -- lsmod | grep xt_RTPENGINE
 
 # Load module
-ssh voip@192.168.64.20 'sudo modprobe xt_RTPENGINE'
+limactl shell media-1 -- sudo modprobe xt_RTPENGINE
 
 # Rebuild if needed (re-run Ansible)
 ./scripts/ansible-run.sh provision-vms --limit media_servers --tags rtpengine
@@ -694,24 +696,20 @@ ssh voip@192.168.64.20 'sudo modprobe xt_RTPENGINE'
 voip-stack/
 ├── ansible/
 │   ├── ansible.cfg                    # Ansible configuration
-│   ├── inventory/development.yml      # VM inventory
+│   ├── inventory/lima.yml             # VM inventory (generated)
 │   ├── group_vars/all.yml            # Global variables
 │   ├── playbooks/
-│   │   ├── provision-vms.yml         # Main provisioning
-│   │   └── manage-libvirt-vms.yml    # VM lifecycle
-│   └── roles/                        # 13 Ansible roles
+│   │   └── provision-vms.yml         # Main provisioning
+│   └── roles/                        # Ansible roles
 │       ├── opensips/                 # SIP proxy role
 │       ├── asterisk/                 # PBX role
 │       └── rtpengine/                # Media role
-├── libvirt/
-│   ├── create-vms.sh                 # VM management script
-│   ├── setup-socket-vmnet.sh         # Network setup
-│   ├── domains/                      # VM XML definitions
-│   │   ├── sip-1.xml
-│   │   ├── pbx-1.xml
-│   │   └── media-1.xml
-│   └── cloud-init/                   # Cloud-init configs
+├── lima/                             # Lima VM configurations
+│   ├── sip-1.yaml                    # SIP proxy VM
+│   ├── media-1.yaml                  # Media server VM
+│   └── pbx-1.yaml                    # PBX VM
 ├── scripts/
+│   ├── lima-vms.sh                   # VM lifecycle management
 │   └── ansible-run.sh                # Ansible wrapper
 ├── tests/
 │   ├── run-phase1-tests.sh           # Test orchestrator
@@ -719,6 +717,7 @@ voip-stack/
 │   ├── functional/                   # Functional tests
 │   └── sipp/                         # Load test scenarios
 ├── docs/                             # Documentation
+├── archive/                          # Archived implementations
 ├── .env.example                      # Environment template
 └── Brewfile                          # Homebrew dependencies
 ```

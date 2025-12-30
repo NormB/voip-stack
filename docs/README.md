@@ -137,8 +137,10 @@ All code examples are tested and verified:
 
 ```bash
 # Bash commands - create VMs and provision
-cd ~/voip-stack/libvirt && ./create-vms.sh create && ./create-vms.sh start
-cd ~/voip-stack && ./scripts/ansible-run.sh provision-vms
+cd ~/voip-stack
+./scripts/lima-vms.sh create
+./scripts/lima-vms.sh inventory
+./scripts/ansible-run.sh provision-vms
 ```
 
 ```yaml
@@ -177,7 +179,7 @@ Replace these with your actual values:
 
 ### Tools
 - [Ansible Docs](https://docs.ansible.com/) - Configuration management
-- [libvirt Documentation](https://libvirt.org/docs.html) - Virtualization API
+- [Lima Documentation](https://lima-vm.io/) - Linux VMs on macOS
 - [SIPp Documentation](http://sipp.sourceforge.net/doc/) - SIP testing
 
 ## Documentation Status
@@ -222,6 +224,7 @@ See [CONTRIBUTING.md](../.github/CONTRIBUTING.md) for documentation guidelines.
 
 ---
 
-**Last Updated**: 2025-12-18
+**Last Updated**: 2025-12-30
+**VM Platform**: Lima with Debian 12 ARM64
 
 **Note**: This project is in active development (Phase 1). Documentation is updated continuously as features are implemented.

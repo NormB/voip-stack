@@ -23,142 +23,123 @@ Common issues and solutions for voip-stack.
 
 ## VM Creation Issues
 
-### libvirt Not Running
+### Lima VM Won't Start
 
-**Symptom**: `virsh` commands fail with connection errors
-
-**Cause**: libvirt service not running
+**Symptom**: `limactl start` fails or hangs
 
 **Solution**:
 ```bash
-# Check libvirt status
-brew services list | grep libvirt
+# Check VM status
+limactl list
 
-# Start libvirt if needed
-brew services start libvirt
+# Check for errors
+limactl info sip-1
 
-# Verify connection
-virsh -c qemu:///session list --all
+# View Lima logs
+cat ~/.lima/sip-1/ha.stderr.log
+cat ~/.lima/sip-1/serial.log
+
+# Try stopping and restarting
+limactl stop sip-1 --force
+limactl start sip-1
 ```
 
-### socket_vmnet Not Running
+### Lima VM Stuck in Starting State
 
-**Symptom**: VMs start but have no network connectivity
+**Symptom**: VM stays in "Starting" state
 
-**Cause**: socket_vmnet service not running
+**Cause**: Image download or boot issue
 
 **Solution**:
 ```bash
-# Check socket_vmnet sockets
-ls -la /opt/homebrew/var/run/socket_vmnet*
+# Delete and recreate VM
+limactl delete sip-1 --force
+./scripts/lima-vms.sh create
 
-# If missing, run setup script
-cd ~/voip-stack/libvirt
-sudo ./setup-socket-vmnet.sh
-
-# Verify services
-sudo launchctl list | grep socket_vmnet
+# Check if Debian image downloaded correctly
+ls -la ~/.cache/lima/download/
 ```
 
-### qemu-guest-agent Missing
+### Lima Configuration Error
 
-**Symptom**: Can't get VM IP address
+**Symptom**: "error loading yaml" when creating VM
 
-**Cause**: qemu-guest-agent not installed in VM
+**Cause**: Invalid YAML in Lima config
 
 **Solution**:
 ```bash
-# SSH to VM
-ssh voip@192.168.64.10
+# Validate YAML syntax
+cat lima/sip-1.yaml | python3 -c 'import yaml,sys; yaml.safe_load(sys.stdin)'
 
-# Install guest agent
-sudo apt install -y qemu-guest-agent
-sudo systemctl enable qemu-guest-agent
-sudo systemctl start qemu-guest-agent
-
-# Verify
-sudo systemctl status qemu-guest-agent
+# Check Lima config format
+limactl validate lima/sip-1.yaml
 ```
 
 ---
 
 ## Network Configuration Issues
 
-### Static IP Not Applied
+### VM Can't Access Host Services
 
-**Symptom**: VM still has DHCP address after bootstrap
+**Symptom**: VM can't reach devstack-core services
 
-**Cause**: Network bootstrap failed or didn't run
+**Cause**: Lima networking issue
 
 **Solution**:
 ```bash
-# Check if bootstrap ran
-cd ~/voip-stack/ansible
-ansible-playbook playbooks/bootstrap-network.yml -vv
+# Check host.lima.internal resolves inside VM
+limactl shell sip-1 -- getent hosts host.lima.internal
 
-# Manually verify static IP
-ssh voip@192.168.64.10
-ip addr show eth0
-# Should show: inet 192.168.64.10/24
+# Test connectivity to Vault
+limactl shell sip-1 -- curl -s http://host.lima.internal:8200/v1/sys/health
+
+# If needed, get host IP manually
+limactl shell sip-1 -- ip route | grep default
 ```
 
-### Cannot SSH After Network Bootstrap
+### SSH Connection Timeout
 
-**Symptom**: SSH times out after static IP configuration
+**Symptom**: SSH to VM times out
 
-**Cause**: Static IP not configured or network restart failed
+**Cause**: VM not fully booted or SSH not ready
 
 **Solution**:
 ```bash
-# Check VM is running
-virsh -c qemu:///session list --all
+# Check VM status
+limactl list
 
-# Try pinging the static IP
-ping 192.168.64.10
-
-# If VM has console access, check IP
-virsh -c qemu:///session console sip-1
-
-# Inside VM, check network
-ip addr show enp0s1
-cat /etc/network/interfaces
-
-# Restart networking manually
-sudo systemctl restart networking
+# Wait for VM to be "Running"
+# Then test SSH
+ssh -v -F ~/.lima/sip-1/ssh.config lima-sip-1
 ```
 
 ---
 
 ## VM Management Issues
 
-### VM Definition Not Found
+### VM Not Found
 
-**Symptom**: `virsh` commands fail with "domain not found"
+**Symptom**: `limactl shell` says VM not found
 
 **Solution**:
 ```bash
-# Check which VMs are defined
-virsh -c qemu:///session list --all
+# List all VMs
+limactl list
 
 # If VMs missing, recreate them
-cd ~/voip-stack/libvirt
-./create-vms.sh create
+./scripts/lima-vms.sh create
 ```
 
 ### VM Already Exists
 
-**Symptom**: `create-vms.sh` fails because VM exists
+**Symptom**: `lima-vms.sh create` fails because VM exists
 
 **Solution**:
 ```bash
-# Option 1: Delete and recreate
-virsh -c qemu:///session destroy sip-1 2>/dev/null || true
-virsh -c qemu:///session undefine sip-1 --remove-all-storage
-cd ~/voip-stack/libvirt
-./create-vms.sh create
-
-# Option 2: Just start existing VMs
-./create-vms.sh start
+# The script will skip existing VMs automatically
+# To recreate, destroy first:
+./scripts/lima-vms.sh destroy
+./scripts/lima-vms.sh create
 ```
 
 ---
@@ -171,17 +152,17 @@ cd ~/voip-stack/libvirt
 
 **Solution**:
 ```bash
+# Check VMs are running
+limactl list
+
+# Regenerate inventory
+./scripts/lima-vms.sh inventory
+
 # Test SSH manually
-ssh voip@192.168.64.10
+limactl shell sip-1
 
-# Check SSH keys
-ssh-add -l
-
-# Try with password auth
-ssh -o PubkeyAuthentication=no voip@192.168.64.10
-
-# Check Ansible inventory
-cat ansible/inventory/development.yml
+# Check inventory file
+cat ansible/inventory/lima.yml
 ```
 
 ### Vault Connection Failed
@@ -302,11 +283,11 @@ healthcheck:
 **Solution**:
 ```bash
 # Check what's using port 5060
-ssh voip@192.168.64.10 'ss -nlup | grep 5060'
+limactl shell sip-1 -- ss -nlup | grep 5060
 
 # Disable native service if using Docker
-ssh voip@192.168.64.10 'sudo systemctl disable opensips'
-ssh voip@192.168.64.10 'sudo systemctl stop opensips'
+limactl shell sip-1 -- sudo systemctl disable opensips
+limactl shell sip-1 -- sudo systemctl stop opensips
 ```
 
 ### Module Path Issues
@@ -330,14 +311,14 @@ mpath="/usr/local/lib64/opensips/modules/"
 
 **Solution**:
 ```bash
-# Test PostgreSQL connection from VM
-ssh voip@192.168.64.10 'psql -h 192.168.64.1 -U opensips -d opensips -c "SELECT 1"'
+# Test PostgreSQL connection from VM (via host.lima.internal)
+limactl shell sip-1 -- psql -h host.lima.internal -U opensips -d opensips -c "SELECT 1"
 
-# From Docker container
-ssh voip@192.168.64.10 'docker exec opensips nc -z 192.168.64.1 5432'
+# Check connectivity
+limactl shell sip-1 -- nc -z host.lima.internal 5432
 
 # Check credentials in config
-grep db_url /etc/opensips/opensips.cfg
+limactl shell sip-1 -- grep db_url /etc/opensips/opensips.cfg
 ```
 
 ---
@@ -383,13 +364,10 @@ ssh voip@192.168.64.30 'docker exec asterisk asterisk -rx "pjsip set logger on"'
 **Solution**:
 ```bash
 # Check RTPEngine is running
-ssh voip@192.168.64.20 'systemctl status rtpengine'
-
-# Check connectivity from Asterisk
-ssh voip@192.168.64.30 'nc -u -z 192.168.64.20 2223 && echo "RTPEngine OK"'
+limactl shell media-1 -- systemctl status rtpengine
 
 # Check PJSIP direct_media setting
-grep direct_media /etc/asterisk/pjsip.conf
+limactl shell pbx-1 -- grep direct_media /etc/asterisk/pjsip.conf
 # Should be: direct_media=no
 ```
 
@@ -418,16 +396,16 @@ grep direct_media /etc/asterisk/pjsip.conf
 **Solution**:
 ```bash
 # Check if module exists
-ssh voip@192.168.64.20 'find /lib/modules -name "xt_RTPENGINE*"'
+limactl shell media-1 -- find /lib/modules -name "xt_RTPENGINE*"
 
 # Check DKMS status
-ssh voip@192.168.64.20 'dkms status'
+limactl shell media-1 -- dkms status
 
 # Rebuild if needed
-ssh voip@192.168.64.20 'sudo dkms autoinstall'
+limactl shell media-1 -- sudo dkms autoinstall
 
 # Manual load
-ssh voip@192.168.64.20 'sudo modprobe xt_RTPENGINE'
+limactl shell media-1 -- sudo modprobe xt_RTPENGINE
 ```
 
 ### Service Won't Start
@@ -437,13 +415,13 @@ ssh voip@192.168.64.20 'sudo modprobe xt_RTPENGINE'
 **Solution**:
 ```bash
 # Check logs
-ssh voip@192.168.64.20 'journalctl -u rtpengine -n 50'
+limactl shell media-1 -- journalctl -u rtpengine -n 50
 
 # Verify configuration
-ssh voip@192.168.64.20 'cat /etc/rtpengine/rtpengine.conf'
+limactl shell media-1 -- cat /etc/rtpengine/rtpengine.conf
 
 # Check interface exists
-ssh voip@192.168.64.20 'ip addr show'
+limactl shell media-1 -- ip addr show
 ```
 
 ---
@@ -459,13 +437,13 @@ ssh voip@192.168.64.20 'ip addr show'
 **Solution**:
 ```bash
 # Wait for socket creation
-ssh voip@192.168.64.10 'sleep 5 && ls -la /var/run/fail2ban/'
+limactl shell sip-1 -- sleep 5 && ls -la /var/run/fail2ban/
 
 # Restart fail2ban
-ssh voip@192.168.64.10 'sudo systemctl restart fail2ban'
+limactl shell sip-1 -- sudo systemctl restart fail2ban
 
 # Check status
-ssh voip@192.168.64.10 'sudo fail2ban-client status'
+limactl shell sip-1 -- sudo fail2ban-client status
 ```
 
 ### Jail Won't Start
@@ -478,11 +456,11 @@ ssh voip@192.168.64.10 'sudo fail2ban-client status'
 Create log file before enabling jail:
 ```bash
 # Create log file
-ssh voip@192.168.64.10 'sudo touch /var/log/opensips/opensips.log'
-ssh voip@192.168.64.10 'sudo chown opensips:opensips /var/log/opensips/opensips.log'
+limactl shell sip-1 -- sudo touch /var/log/opensips/opensips.log
+limactl shell sip-1 -- sudo chown opensips:opensips /var/log/opensips/opensips.log
 
 # Restart fail2ban
-ssh voip@192.168.64.10 'sudo systemctl restart fail2ban'
+limactl shell sip-1 -- sudo systemctl restart fail2ban
 ```
 
 ### Filter Syntax Errors
@@ -494,10 +472,10 @@ ssh voip@192.168.64.10 'sudo systemctl restart fail2ban'
 **Solution**:
 ```bash
 # Test filter
-ssh voip@192.168.64.10 'sudo fail2ban-regex /var/log/opensips/opensips.log /etc/fail2ban/filter.d/opensips.conf'
+limactl shell sip-1 -- sudo fail2ban-regex /var/log/opensips/opensips.log /etc/fail2ban/filter.d/opensips.conf
 
 # Check filter file
-ssh voip@192.168.64.10 'cat /etc/fail2ban/filter.d/opensips.conf'
+limactl shell sip-1 -- cat /etc/fail2ban/filter.d/opensips.conf
 ```
 
 ---
@@ -547,9 +525,8 @@ vault_client_binary_url: "https://releases.hashicorp.com/vault/{{ vault_version 
 
 **Solution**:
 ```bash
-# Test connection from VM
-ssh voip@192.168.64.10
-psql -h 192.168.64.1 -U opensips -d opensips
+# Test connection from VM (via host.lima.internal)
+limactl shell sip-1 -- psql -h host.lima.internal -U opensips -d opensips
 
 # Check devstack-core PostgreSQL
 cd ~/devstack-core
@@ -564,10 +541,10 @@ cd ~/devstack-core
 **Solution**:
 ```bash
 # Check database exists
-psql -h 192.168.64.1 -U postgres -l
+psql -h localhost -U postgres -l
 
-# Run migrations manually
-ssh voip@192.168.64.10
+# Run migrations manually inside VM
+limactl shell sip-1
 sudo -u opensips opensips-cli -x database create
 ```
 
@@ -580,15 +557,16 @@ sudo -u opensips opensips-cli -x database create
 **Solution**:
 ```bash
 # Check CPU usage
-ssh voip@192.168.64.10 "top -bn1"
+limactl shell sip-1 -- top -bn1 | head -20
 
 # Check disk I/O
-ssh voip@192.168.64.10 "iostat"
+limactl shell sip-1 -- iostat
 
 # Check available RAM
-ssh voip@192.168.64.10 "free -h"
+limactl shell sip-1 -- free -h
 
-# Consider increasing resources in template
+# Check VM resources
+limactl info sip-1 | grep -E "cpus|memory"
 ```
 
 ### High Memory Usage
@@ -596,10 +574,10 @@ ssh voip@192.168.64.10 "free -h"
 **Solution**:
 ```bash
 # Check what's using memory
-ssh voip@192.168.64.30 "ps aux --sort=-%mem | head -20"
+limactl shell pbx-1 -- ps aux --sort=-%mem | head -20
 
 # Restart services to clear memory
-ssh voip@192.168.64.30 "sudo systemctl restart asterisk"
+limactl shell pbx-1 -- sudo systemctl restart asterisk
 ```
 
 ### Ansible Slow Provisioning
@@ -621,63 +599,45 @@ See [ANSIBLE-PROVISIONING.md](ANSIBLE-PROVISIONING.md) for detailed performance 
 
 ```bash
 # Stop all VMs
-cd ~/voip-stack/libvirt
-./create-vms.sh stop
+./scripts/lima-vms.sh stop
 
-# Delete all VMs
-./create-vms.sh destroy
+# Destroy all VMs
+./scripts/lima-vms.sh destroy
 
-# Re-create and start VMs
-./create-vms.sh create
-./create-vms.sh start
+# Re-create VMs
+./scripts/lima-vms.sh create
 
-# Wait for boot
-sleep 60
-
-# Re-provision
-cd ~/voip-stack
+# Generate inventory and re-provision
+./scripts/lima-vms.sh inventory
 ./scripts/ansible-run.sh provision-vms
 ```
 
 ### Reset Single VM
 
 ```bash
-# Stop VM
-virsh -c qemu:///session destroy sip-1 2>/dev/null || true
+# Stop and delete single VM
+limactl stop sip-1
+limactl delete sip-1
 
-# Delete VM
-virsh -c qemu:///session undefine sip-1 --remove-all-storage
+# Recreate VM
+limactl create --name=sip-1 lima/sip-1.yaml
+limactl start sip-1
 
-# Recreate VM (regenerates cloud-init and disk)
-cd ~/voip-stack/libvirt
-./create-vms.sh create  # Will only create missing VMs
-
-# Start VM
-virsh -c qemu:///session start sip-1
-
-# Wait for boot
-sleep 60
+# Regenerate inventory
+./scripts/lima-vms.sh inventory
 
 # Re-run Ansible for this VM only
-cd ~/voip-stack
 ./scripts/ansible-run.sh provision-vms --limit sip-1
 ```
 
-### Reset Docker Containers
+### Reset Services
 
 ```bash
-# On specific VM
-ssh voip@192.168.64.10
+# Restart service on VM
+limactl shell sip-1 -- sudo systemctl restart opensips
 
-# Stop and remove containers
-cd /opt/opensips
-docker compose down
-
-# Remove volumes (if needed)
-docker compose down -v
-
-# Restart
-docker compose up -d
+# Check logs
+limactl shell sip-1 -- journalctl -u opensips -n 50 --no-pager
 ```
 
 ---
@@ -686,28 +646,31 @@ docker compose up -d
 
 1. **Check Logs**:
    ```bash
-   # VM logs
-   ssh voip@192.168.64.10 "sudo journalctl -xe"
+   # VM system logs
+   limactl shell sip-1 -- sudo journalctl -xe
 
-   # Docker container logs
-   ssh voip@192.168.64.10 "docker logs opensips --tail 100"
+   # Service logs
+   limactl shell sip-1 -- journalctl -u opensips --no-pager
+
+   # Lima VM logs
+   cat ~/.lima/sip-1/ha.stderr.log
 
    # Ansible logs
-   cd ~/voip-stack/ansible
-   ansible-playbook playbooks/provision-vms.yml -vvv > debug.log 2>&1
+   ./scripts/ansible-run.sh provision-vms -vvv > debug.log 2>&1
    ```
 
 2. **Verify Prerequisites**:
    - devstack-core running
-   - VMs created with libvirt
+   - Lima VMs running (`limactl list`)
    - Sufficient disk space and RAM
 
 3. **Community Support**:
-   - GitHub Issues: https://github.com/youruser/voip-stack/issues
+   - GitHub Issues: https://github.com/NormB/voip-stack/issues
    - Check existing issues first
    - Include logs and error messages
 
 ---
 
 **Document Status**: Complete
-**Last Updated**: 2025-12-18
+**Last Updated**: 2025-12-30
+**VM Platform**: Lima with Debian 12 ARM64
