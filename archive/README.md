@@ -2,10 +2,26 @@
 
 This directory contains legacy implementations that have been superseded by newer approaches.
 
+## vagrant-failed/
+
+**Archived**: 2025-12-30
+**Replaced by**: Multipass (`scripts/multipass-vms.sh`)
+
+The Vagrant approach failed on Apple Silicon due to:
+1. **vagrant-qemu**: VMs boot but SSH never connects (cloud-init hangs)
+2. **VirtualBox**: No ARM64 boxes available (x86 only)
+3. **VMware**: Requires paid software
+
+### Lesson Learned
+
+Vagrant's ARM64 ecosystem is immature. Use native tools like Multipass instead.
+
+---
+
 ## libvirt-legacy/
 
 **Archived**: 2025-12-30
-**Replaced by**: `vagrant/` directory with vagrant-qemu
+**Replaced by**: Multipass (`scripts/multipass-vms.sh`)
 
 The libvirt implementation was the original VM infrastructure using:
 - libvirt/QEMU with socket_vmnet for networking
