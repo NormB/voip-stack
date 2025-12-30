@@ -1,0 +1,107 @@
+---
+# Vault client role - configure Vault AppRole authentication
+
+- name: Install Vault binary
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/vault/1.15.4/vault_1.15.4_linux_arm64.zip"
+    dest: /tmp/vault.zip
+    mode: '0644'
+  tags: [vault, install]
+
+- name: Extract Vault binary
+  ansible.builtin.unarchive:
+    src: /tmp/vault.zip
+    dest: /usr/local/bin
+    remote_src: yes
+    mode: '0755'
+  tags: [vault, install]
+
+- name: Create Vault config directory
+  ansible.builtin.file:
+    path: /etc/vault
+    state: directory
+    mode: '0755'
+  tags: [vault, config]
+
+- name: Create Vault token directory
+  ansible.builtin.file:
+    path: /var/lib/vault
+    state: directory
+    mode: '0700'
+  tags: [vault, config]
+
+- name: Template Vault agent configuration
+  ansible.builtin.template:
+    src: vault-agent.hcl.j2
+    dest: /etc/vault/agent.hcl
+    mode: '0600'
+  tags: [vault, config]
+
+- name: Create Vault agent systemd service
+  ansible.builtin.template:
+    src: vault-agent.service.j2
+    dest: /etc/systemd/system/vault-agent.service
+    mode: '0644'
+  notify: reload systemd
+  tags: [vault, service]
+
+- name: Check if Vault AppRole credentials exist
+  ansible.builtin.stat:
+    path: /etc/vault/role-id
+  register: vault_role_id_file
+  tags: [vault, service]
+
+- name: Enable and start Vault agent
+  ansible.builtin.systemd:
+    name: vault-agent
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  when: vault_role_id_file.stat.exists
+  tags: [vault, service]
+
+- name: Create helper script to read secrets
+  ansible.builtin.template:
+    src: vault-read.sh.j2
+    dest: /usr/local/bin/vault-read
+    mode: '0755'
+  tags: [vault, helpers]
+
+- name: Wait for Vault agent to authenticate
+  ansible.builtin.wait_for:
+    path: /var/lib/vault/token
+    timeout: 30
+  when: vault_role_id_file.stat.exists
+  ignore_errors: yes
+  register: vault_auth_result
+  tags: [vault, verify]
+
+- name: Verify Vault connectivity
+  ansible.builtin.command:
+    cmd: vault token lookup
+  environment:
+    VAULT_ADDR: "{{ devstack_core.vault.address | default('http://192.168.64.1:8200') }}"
+    VAULT_TOKEN: "{{ lookup('file', '/var/lib/vault/token') }}"
+  register: vault_token_info
+  changed_when: false
+  failed_when: false
+  when: vault_role_id_file.stat.exists
+  tags: [vault, verify]
+
+- name: Display Vault authentication status
+  ansible.builtin.debug:
+    msg: "Vault authentication successful for {{ inventory_hostname }}"
+  when: vault_role_id_file.stat.exists and vault_auth_result is not failed and vault_token_info.rc == 0
+  tags: [vault, verify]
+
+- name: Display Vault connection failed message
+  ansible.builtin.debug:
+    msg: "Vault agent started but authentication failed - Vault server may not be running at {{ devstack_core.vault.address | default('http://192.168.64.1:8200') }}"
+  when: vault_role_id_file.stat.exists and vault_auth_result is failed
+  tags: [vault, verify]
+
+- name: Display Vault setup required message
+  ansible.builtin.debug:
+    msg: "Vault AppRole credentials not found. Run vault credential setup to enable Vault integration."
+  when: not vault_role_id_file.stat.exists
+  tags: [vault, verify]

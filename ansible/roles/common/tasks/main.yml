@@ -1,0 +1,72 @@
+---
+# Common role - tasks applied to all VMs
+
+- name: Set hostname
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+  tags: [hostname]
+
+- name: Update /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^{{ internal_ip }}\\s+"
+    line: "{{ internal_ip }} {{ inventory_hostname }} {{ inventory_hostname }}.{{ domain }}"
+    state: present
+  tags: [hostname]
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ timezone }}"
+  tags: [timezone]
+
+- name: Install common packages
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  tags: [packages]
+
+- name: Ensure systemd-timesyncd is running
+  ansible.builtin.systemd:
+    name: systemd-timesyncd
+    state: started
+    enabled: yes
+  when: ntp.enabled | default(true)
+  tags: [ntp]
+
+- name: Apply kernel tuning
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { name: 'vm.swappiness', value: "{{ system.swappiness | default(10) }}" }
+    - { name: 'fs.file-max', value: "{{ system.file_max | default(65536) }}" }
+    - { name: 'vm.max_map_count', value: "{{ system.max_map_count | default(262144) }}" }
+    - { name: 'net.core.rmem_max', value: '16777216' }
+    - { name: 'net.core.wmem_max', value: '16777216' }
+    - { name: 'net.ipv4.tcp_rmem', value: '4096 87380 16777216' }
+    - { name: 'net.ipv4.tcp_wmem', value: '4096 65536 16777216' }
+  when: system is defined and (system.kernel_tuning | default(true))
+  tags: [tuning]
+
+- name: Create VoIP directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/voip
+    - /var/log/voip
+    - /var/lib/voip
+  tags: [directories]
+
+- name: Configure log rotation
+  ansible.builtin.template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/voip
+    mode: '0644'
+  when: logging.log_rotation.enabled | default(true)
+  tags: [logging]

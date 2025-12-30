@@ -1,0 +1,67 @@
+---
+# Asterisk Service Tasks
+# {{ ansible_managed }}
+
+- name: Ensure Asterisk service is started and enabled
+  ansible.builtin.systemd:
+    name: asterisk
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true
+  when: asterisk_enabled
+  tags: [asterisk, service]
+
+- name: Wait for Asterisk to be ready
+  ansible.builtin.wait_for:
+    port: "{{ asterisk_sip_port }}"
+    host: "{{ internal_ip | default('127.0.0.1') }}"
+    timeout: 60
+  tags: [asterisk, verify]
+
+- name: Verify Asterisk is running (Docker)
+  community.docker.docker_container_info:
+    name: asterisk
+  register: asterisk_container_info
+  become: true
+  when: asterisk_install_method == 'docker'
+  tags: [asterisk, verify]
+
+- name: Display container status (Docker)
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      ASTERISK CONTAINER STATUS
+      ========================================
+      Container ID: {{ asterisk_container_info.container.Id[:12] }}
+      Status: {{ asterisk_container_info.container.State.Status }}
+      Started: {{ asterisk_container_info.container.State.StartedAt }}
+      Image: {{ asterisk_container_info.container.Config.Image }}
+      ========================================
+  when:
+    - asterisk_install_method == 'docker'
+    - asterisk_container_info.exists
+  tags: [asterisk, verify]
+
+- name: Get Asterisk version (Docker)
+  ansible.builtin.command:
+    cmd: docker exec asterisk asterisk -V
+  register: asterisk_version_output
+  changed_when: false
+  become: true
+  when: asterisk_install_method == 'docker'
+  tags: [asterisk, verify]
+
+- name: Get Asterisk version (Native)
+  ansible.builtin.command:
+    cmd: asterisk -V
+  register: asterisk_version_output
+  changed_when: false
+  when: asterisk_install_method != 'docker'
+  tags: [asterisk, verify]
+
+- name: Display Asterisk version
+  ansible.builtin.debug:
+    msg: "{{ asterisk_version_output.stdout }}"
+  when: asterisk_version_output.stdout is defined
+  tags: [asterisk, verify]

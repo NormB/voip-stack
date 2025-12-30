@@ -1,0 +1,29 @@
+; {{ ansible_managed }}
+; Asterisk Manager Interface (AMI) Configuration
+;
+
+[general]
+enabled=yes
+port={{ asterisk_ami_port | default(5038) }}
+bindaddr={{ asterisk_ami_bindaddr | default('127.0.0.1') }}
+displayconnects=yes
+timestampevents=yes
+
+; AMI admin user
+[{{ asterisk_ami_user | default('admin') }}]
+secret={{ asterisk_ami_secret | default('changeme') }}
+deny=0.0.0.0/0.0.0.0
+permit={{ asterisk_ami_permit | default('127.0.0.1/255.255.255.255') }}
+read=all
+write=all
+writetimeout=5000
+
+{% if asterisk_ami_monitoring_user is defined %}
+; Read-only user for monitoring
+[{{ asterisk_ami_monitoring_user }}]
+secret={{ asterisk_ami_monitoring_secret | default('monitoring') }}
+deny=0.0.0.0/0.0.0.0
+permit={{ asterisk_ami_monitoring_permit | default('192.168.64.0/255.255.255.0') }}
+read=system,call,log,agent
+write=
+{% endif %}

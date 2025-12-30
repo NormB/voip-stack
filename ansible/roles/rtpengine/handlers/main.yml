@@ -1,0 +1,19 @@
+---
+# RTPEngine Handlers
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Restart rtpengine
+  ansible.builtin.systemd:
+    name: rtpengine
+    state: restarted
+  become: true
+
+- name: Reload kernel module
+  ansible.builtin.shell: |
+    modprobe -r xt_RTPENGINE
+    modprobe xt_RTPENGINE
+  become: true

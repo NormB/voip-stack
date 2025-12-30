@@ -1,0 +1,140 @@
+---
+# Docker Installation Role
+# {{ ansible_managed }}
+
+- name: Install Docker prerequisites
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - python3-pip
+      - python3-docker
+      - cron
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+  tags: [docker, install]
+
+- name: Create keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  become: true
+  tags: [docker, install]
+
+- name: Download Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: '0644'
+  become: true
+  tags: [docker, install]
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+    state: present
+    filename: docker
+  become: true
+  tags: [docker, install]
+
+- name: Install Docker packages
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+  tags: [docker, install]
+
+- name: Ensure Docker group exists
+  ansible.builtin.group:
+    name: docker
+    state: present
+  become: true
+  tags: [docker, config]
+
+- name: Add users to docker group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: yes
+  become: true
+  loop: "{{ docker_users }}"
+  tags: [docker, config]
+
+- name: Create Docker daemon config directory
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+  become: true
+  tags: [docker, config]
+
+- name: Configure Docker daemon
+  ansible.builtin.copy:
+    content: "{{ docker_daemon_config | to_nice_json }}"
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  become: true
+  notify: Restart docker
+  tags: [docker, config]
+
+- name: Ensure Docker service is started and enabled
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: "{{ docker_enabled }}"
+    daemon_reload: yes
+  become: true
+  tags: [docker, service]
+
+- name: Verify Docker installation
+  ansible.builtin.command: docker --version
+  register: docker_version_output
+  changed_when: false
+  tags: [docker, verify]
+
+- name: Display Docker version
+  ansible.builtin.debug:
+    msg: "{{ docker_version_output.stdout }}"
+  tags: [docker, verify]
+
+- name: Verify Docker Compose installation
+  ansible.builtin.command: docker compose version
+  register: compose_version_output
+  changed_when: false
+  tags: [docker, verify]
+
+- name: Display Docker Compose version
+  ansible.builtin.debug:
+    msg: "{{ compose_version_output.stdout }}"
+  tags: [docker, verify]
+
+- name: Login to Forgejo registry
+  community.docker.docker_login:
+    registry_url: "{{ docker_registry_url }}"
+    username: "{{ docker_registry_user }}"
+    password: "{{ docker_registry_password }}"
+  when: docker_registry_password is defined
+  tags: [docker, registry]
+
+- name: Create Docker prune cron job
+  ansible.builtin.cron:
+    name: "Docker system prune"
+    special_time: "{{ docker_prune_schedule }}"
+    job: "docker system prune -af --volumes > /dev/null 2>&1"
+    user: root
+  become: true
+  when: docker_prune_enabled
+  tags: [docker, maintenance]

@@ -1,0 +1,73 @@
+<domain type='qemu' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+  <name>sip-1</name>
+  <uuid>a1b2c3d4-e5f6-7890-abcd-ef1234567890</uuid>
+  <metadata>
+    <voipstack:vm xmlns:voipstack="http://voipstack.local/xmlns">
+      <voipstack:role>sip_proxy</voipstack:role>
+      <voipstack:ip>192.168.64.10</voipstack:ip>
+    </voipstack:vm>
+  </metadata>
+  <memory unit='GiB'>2</memory>
+  <currentMemory unit='GiB'>2</currentMemory>
+  <vcpu placement='static'>2</vcpu>
+  <os>
+    <type arch='aarch64' machine='virt'>hvm</type>
+    <loader readonly='yes' type='pflash'>/opt/homebrew/share/qemu/edk2-aarch64-code.fd</loader>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <gic version='3'/>
+  </features>
+  <cpu mode='custom' match='exact'>
+    <model>max</model>
+  </cpu>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/opt/homebrew/bin/qemu-system-aarch64</emulator>
+    <!-- System disk with I/O optimization -->
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='writeback' discard='unmap'/>
+      <source file='/Users/gator/voip-stack/libvirt/images/sip-1.qcow2'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+    <!-- Cloud-init config drive -->
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='/Users/gator/voip-stack/libvirt/images/sip-1-cidata.iso'/>
+      <target dev='sda' bus='scsi'/>
+      <readonly/>
+    </disk>
+    <controller type='scsi' model='virtio-scsi'/>
+    <!-- Console -->
+    <serial type='pty'>
+      <target port='0'/>
+    </serial>
+    <console type='pty'>
+      <target type='serial' port='0'/>
+    </console>
+    <!-- RNG for entropy -->
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+  </devices>
+  <!-- QEMU command line for socket_vmnet networking -->
+  <qemu:commandline>
+    <!-- HVF acceleration -->
+    <qemu:arg value='-accel'/>
+    <qemu:arg value='hvf'/>
+    <!-- eth0: Shared network (192.168.64.0/24) -->
+    <qemu:arg value='-netdev'/>
+    <qemu:arg value='stream,id=net0,addr.type=unix,addr.path=/opt/homebrew/var/run/socket_vmnet.shared'/>
+    <qemu:arg value='-device'/>
+    <qemu:arg value='virtio-net-pci,netdev=net0,mac=52:54:00:12:34:10,bus=pcie.0,addr=0x10'/>
+    <!-- eth1: Bridged network (external) -->
+    <qemu:arg value='-netdev'/>
+    <qemu:arg value='stream,id=net1,addr.type=unix,addr.path=/opt/homebrew/var/run/socket_vmnet.bridged'/>
+    <qemu:arg value='-device'/>
+    <qemu:arg value='virtio-net-pci,netdev=net1,mac=52:54:00:12:35:10,bus=pcie.0,addr=0x11'/>
+  </qemu:commandline>
+</domain>

@@ -1,0 +1,84 @@
+---
+# Asterisk Docker Installation
+# {{ ansible_managed }}
+
+- name: Display Asterisk Docker installation info
+  ansible.builtin.debug:
+    msg: |
+      Installing Asterisk via Docker
+      Image: {{ asterisk_docker_image }}
+      Config directory: {{ asterisk_config_dir }}
+  tags: [asterisk, docker, install]
+
+- name: Ensure Docker role is applied
+  ansible.builtin.include_role:
+    name: docker
+  tags: [asterisk, docker, install]
+
+- name: Create Asterisk user
+  ansible.builtin.user:
+    name: "{{ asterisk_user }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ asterisk_spool_dir }}"
+    create_home: no
+  become: true
+  tags: [asterisk, docker, install]
+
+- name: Create Asterisk directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0755'
+  become: true
+  loop:
+    - "{{ asterisk_config_dir }}"
+    - "{{ asterisk_run_dir }}"
+    - "{{ asterisk_log_dir }}"
+    - "{{ asterisk_spool_dir }}"
+    - "{{ asterisk_spool_dir }}/voicemail"
+    - "{{ asterisk_spool_dir }}/recording"
+    - "{{ asterisk_spool_dir }}/monitor"
+    - "{{ asterisk_docker_compose_dir }}"
+  tags: [asterisk, docker, install]
+
+- name: Pull Asterisk Docker image
+  community.docker.docker_image:
+    name: "{{ asterisk_docker_image }}"
+    source: pull
+    force_source: "{{ asterisk_docker_pull_always | default(false) }}"
+  become: true
+  register: asterisk_image_pull
+  tags: [asterisk, docker, install]
+
+- name: Display pulled image info
+  ansible.builtin.debug:
+    msg: "Pulled image: {{ asterisk_docker_image }}"
+  when: asterisk_image_pull.changed
+  tags: [asterisk, docker, install]
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ asterisk_docker_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: docker
+    mode: '0640'
+  become: true
+  notify: Restart asterisk container
+  tags: [asterisk, docker, config]
+
+- name: Create systemd service for docker-compose
+  ansible.builtin.template:
+    src: asterisk-docker.service.j2
+    dest: /etc/systemd/system/asterisk.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - Reload systemd
+    - Restart asterisk container
+  tags: [asterisk, docker, service]

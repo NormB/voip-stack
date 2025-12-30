@@ -1,0 +1,76 @@
+---
+# Fail2ban Role - Default Variables
+
+# General settings
+fail2ban_enabled: true
+fail2ban_loglevel: "INFO"
+fail2ban_logtarget: "/var/log/fail2ban.log"
+
+# Default ban settings
+fail2ban_default_bantime: "1h"
+fail2ban_default_findtime: "10m"
+fail2ban_default_maxretry: 5
+
+# Ignore list (never ban these IPs)
+fail2ban_ignoreip:
+  - "127.0.0.1/8"
+  - "::1"
+  - "192.168.64.0/24"  # VoIP internal network
+  - "{{ internal_ip | default('127.0.0.1') }}"
+
+# Backend for log monitoring
+fail2ban_backend: "auto"
+
+# Email notifications (optional)
+fail2ban_destemail: ""
+fail2ban_sender: "fail2ban@localhost"
+fail2ban_mta: "sendmail"
+
+# Action on ban
+# Options: %(action_)s, %(action_mw)s, %(action_mwl)s
+fail2ban_action: "%(action_)s"
+
+# ============================================================================
+# SIP-specific Jails
+# ============================================================================
+
+# OpenSIPS jail configuration
+fail2ban_opensips_enabled: "{{ 'sip_proxies' in group_names }}"
+fail2ban_opensips_port: "5060,5061"
+fail2ban_opensips_logpath: "/var/log/opensips/opensips.log"
+fail2ban_opensips_maxretry: 5
+fail2ban_opensips_findtime: "5m"
+fail2ban_opensips_bantime: "1h"
+
+# Asterisk jail configuration
+fail2ban_asterisk_enabled: "{{ 'pbx' in group_names }}"
+fail2ban_asterisk_port: "5060,5061,5080"
+fail2ban_asterisk_logpath: "/var/log/asterisk/security"
+fail2ban_asterisk_maxretry: 5
+fail2ban_asterisk_findtime: "5m"
+fail2ban_asterisk_bantime: "1h"
+
+# SSH jail (always enabled)
+fail2ban_ssh_enabled: true
+fail2ban_ssh_port: "22"
+fail2ban_ssh_logpath: "/var/log/auth.log"
+fail2ban_ssh_maxretry: 5
+fail2ban_ssh_bantime: "1h"
+
+# ============================================================================
+# Aggressive mode for VoIP (optional)
+# ============================================================================
+
+# Enable aggressive banning for SIP scanners
+fail2ban_aggressive_mode: false
+
+# Aggressive settings (used when aggressive_mode is true)
+fail2ban_aggressive_bantime: "24h"
+fail2ban_aggressive_findtime: "1h"
+fail2ban_aggressive_maxretry: 3
+
+# Recidive jail (ban repeat offenders longer)
+fail2ban_recidive_enabled: true
+fail2ban_recidive_bantime: "1w"
+fail2ban_recidive_findtime: "1d"
+fail2ban_recidive_maxretry: 5

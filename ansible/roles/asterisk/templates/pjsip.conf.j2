@@ -1,0 +1,140 @@
+; {{ ansible_managed }}
+; Asterisk PJSIP Configuration
+;
+; This configuration integrates Asterisk with OpenSIPS SIP proxy
+; - Asterisk receives calls forwarded from OpenSIPS
+; - Media is handled by RTPEngine
+;
+
+;==============================================================================
+; GLOBAL SETTINGS
+;==============================================================================
+[global]
+type=global
+max_forwards=70
+user_agent=Asterisk PBX {{ asterisk_version | default('20') }}
+default_outbound_endpoint=opensips-trunk
+
+;==============================================================================
+; TRANSPORTS
+;==============================================================================
+{% for transport in asterisk_pjsip_transports %}
+[{{ transport.name }}]
+type=transport
+protocol={{ transport.protocol }}
+bind={{ transport.bind }}
+{% if transport.protocol == 'tls' %}
+cert_file={{ asterisk_tls_cert | default('/etc/asterisk/tls/asterisk.crt') }}
+priv_key_file={{ asterisk_tls_key | default('/etc/asterisk/tls/asterisk.key') }}
+{% if asterisk_tls_ca is defined %}
+ca_list_file={{ asterisk_tls_ca }}
+{% endif %}
+method=tlsv1_2
+{% endif %}
+
+{% endfor %}
+
+;==============================================================================
+; OPENSIPS TRUNK - Connection to SIP Proxy
+;==============================================================================
+; Authentication credentials for trunk (from Vault)
+[auth-opensips]
+type=auth
+auth_type=userpass
+username={{ asterisk_trunk_username | default('asterisk') }}
+password={{ asterisk_trunk_password | default('changeme') }}
+
+; AOR for OpenSIPS
+[opensips-aor]
+type=aor
+contact=sip:{{ asterisk_opensips_host }}:5060
+qualify_frequency=60
+qualify_timeout=3.0
+
+; Identify traffic from OpenSIPS by IP
+[opensips-identify]
+type=identify
+endpoint=opensips-trunk
+match={{ asterisk_opensips_host }}/32
+
+; OpenSIPS trunk endpoint
+[opensips-trunk]
+type=endpoint
+transport=transport-udp
+context=from-opensips
+disallow=all
+allow=ulaw
+allow=alaw
+allow=g722
+allow=opus
+dtmf_mode=rfc4733
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+direct_media=no
+; Trust Remote-Party-ID from OpenSIPS
+trust_id_inbound=yes
+send_rpid=yes
+; Authentication
+outbound_auth=auth-opensips
+aors=opensips-aor
+
+;==============================================================================
+; ENDPOINT TEMPLATES
+;==============================================================================
+; Template for internal extensions (provisioned via realtime or static)
+[endpoint-internal](!)
+type=endpoint
+transport=transport-udp
+context=internal
+disallow=all
+allow=ulaw
+allow=alaw
+allow=g722
+dtmf_mode=rfc4733
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+direct_media=no
+
+; Template for auth objects
+[auth-internal](!)
+type=auth
+auth_type=userpass
+
+; Template for aor objects
+[aor-internal](!)
+type=aor
+max_contacts=5
+remove_existing=yes
+qualify_frequency=30
+qualify_timeout=3.0
+
+;==============================================================================
+; STATIC EXTENSIONS (for testing)
+;==============================================================================
+{% if asterisk_static_extensions is defined %}
+{% for ext in asterisk_static_extensions %}
+; Extension {{ ext.number }} - {{ ext.name | default(ext.number) }}
+[{{ ext.number }}](endpoint-internal)
+auth={{ ext.number }}-auth
+aors={{ ext.number }}
+callerid="{{ ext.name | default('Extension ' + ext.number) }}" <{{ ext.number }}>
+
+[{{ ext.number }}-auth](auth-internal)
+username={{ ext.number }}
+password={{ ext.password }}
+
+[{{ ext.number }}](aor-internal)
+
+{% endfor %}
+{% endif %}
+
+;==============================================================================
+; REALTIME CONFIGURATION
+;==============================================================================
+{% if asterisk_realtime_enabled | default(false) %}
+; Realtime endpoints are loaded from PostgreSQL
+; Tables: ps_endpoints, ps_auths, ps_aors, ps_contacts
+; See extconfig.conf for realtime mapping
+{% endif %}

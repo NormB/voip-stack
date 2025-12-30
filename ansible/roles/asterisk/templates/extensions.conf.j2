@@ -1,0 +1,126 @@
+; {{ ansible_managed }}
+; Asterisk Extensions/Dialplan Configuration
+;
+; This dialplan handles calls received from OpenSIPS
+;
+
+[general]
+static=yes
+writeprotect=no
+clearglobalvars=no
+
+;==============================================================================
+; GLOBAL VARIABLES
+;==============================================================================
+[globals]
+TRANSFER_CONTEXT=internal
+RECORDING_DIR={{ asterisk_recording_dir | default('/var/spool/asterisk/recording') }}
+VOICEMAIL_CONTEXT=default
+
+;==============================================================================
+; FROM-OPENSIPS CONTEXT
+; Calls arriving from OpenSIPS SIP proxy
+;==============================================================================
+[from-opensips]
+; Log incoming calls
+exten => _X.,1,NoOp(Incoming call from OpenSIPS: ${CALLERID(all)} to ${EXTEN})
+ same => n,Set(CDR(accountcode)=opensips)
+{% if asterisk_recording_enabled | default(false) %}
+ same => n,Set(RECORDING_FILE=${RECORDING_DIR}/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${CALLERID(num)}-${EXTEN})
+ same => n,MixMonitor(${RECORDING_FILE}.${RECORDING_FORMAT},b)
+{% endif %}
+ same => n,Goto(internal,${EXTEN},1)
+
+; Handle invalid extensions
+exten => i,1,NoOp(Invalid extension: ${INVALID_EXTEN})
+ same => n,Playback(invalid)
+ same => n,Hangup()
+
+;==============================================================================
+; INTERNAL CONTEXT
+; Internal extension dialing and features
+;==============================================================================
+[internal]
+; Extensions 1XXX - 4-digit extensions
+exten => _1XXX,1,NoOp(Dialing internal extension ${EXTEN})
+ same => n,Set(CALLERID(name)=${CALLERID(name)})
+ same => n,Dial(PJSIP/${EXTEN},30,tTm(default))
+ same => n,Goto(internal-missed,${EXTEN},1)
+
+; Extensions 2XXX - 4-digit extensions
+exten => _2XXX,1,NoOp(Dialing internal extension ${EXTEN})
+ same => n,Set(CALLERID(name)=${CALLERID(name)})
+ same => n,Dial(PJSIP/${EXTEN},30,tTm(default))
+ same => n,Goto(internal-missed,${EXTEN},1)
+
+{% if asterisk_voicemail_enabled | default(true) %}
+; Voicemail access
+exten => *98,1,NoOp(Voicemail access)
+ same => n,VoiceMailMain(${CALLERID(num)}@${VOICEMAIL_CONTEXT})
+ same => n,Hangup()
+
+; Direct voicemail (leave message without ringing)
+exten => _*1XXX,1,NoOp(Direct voicemail for ${EXTEN:1})
+ same => n,VoiceMail(${EXTEN:1}@${VOICEMAIL_CONTEXT},u)
+ same => n,Hangup()
+
+exten => _*2XXX,1,NoOp(Direct voicemail for ${EXTEN:1})
+ same => n,VoiceMail(${EXTEN:1}@${VOICEMAIL_CONTEXT},u)
+ same => n,Hangup()
+{% endif %}
+
+; Echo test
+exten => *43,1,NoOp(Echo test)
+ same => n,Answer()
+ same => n,Playback(demo-echotest)
+ same => n,Echo()
+ same => n,Playback(demo-echodone)
+ same => n,Hangup()
+
+; Speaking clock
+exten => *60,1,NoOp(Speaking clock)
+ same => n,Answer()
+ same => n,SayUnixTime(,Timezone,IMp)
+ same => n,Hangup()
+
+; Invalid extension handler
+exten => i,1,NoOp(Invalid extension in internal context)
+ same => n,Playback(invalid)
+ same => n,Hangup()
+
+;==============================================================================
+; MISSED CALL / NO ANSWER HANDLER
+;==============================================================================
+[internal-missed]
+exten => _X.,1,NoOp(Call missed/no answer for ${EXTEN})
+{% if asterisk_voicemail_enabled | default(true) %}
+ same => n,GotoIf($["${DIALSTATUS}" = "BUSY"]?busy:unavail)
+ same => n(busy),VoiceMail(${EXTEN}@${VOICEMAIL_CONTEXT},b)
+ same => n,Hangup()
+ same => n(unavail),VoiceMail(${EXTEN}@${VOICEMAIL_CONTEXT},u)
+ same => n,Hangup()
+{% else %}
+ same => n,Playback(vm-nobodyavail)
+ same => n,Hangup()
+{% endif %}
+
+;==============================================================================
+; OUTBOUND CONTEXT (via OpenSIPS)
+;==============================================================================
+[to-opensips]
+; Route calls back through OpenSIPS for external routing
+exten => _X.,1,NoOp(Outbound call via OpenSIPS to ${EXTEN})
+ same => n,Set(CALLERID(name)=${CALLERID(name)})
+ same => n,Dial(PJSIP/${EXTEN}@opensips-trunk,60)
+ same => n,Hangup()
+
+;==============================================================================
+; MACRO/SUBROUTINE DEFINITIONS
+;==============================================================================
+; Standard dial subroutine for feature codes
+[sub-stdexten]
+exten => s,1,NoOp(Standard extension dialing subroutine)
+ same => n,Set(TECH=${ARG1})
+ same => n,Set(DEST=${ARG2})
+ same => n,Dial(${TECH}/${DEST},30,tTm(default))
+ same => n,Return()

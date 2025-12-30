@@ -1,0 +1,35 @@
+; {{ ansible_managed }}
+; Asterisk Module Configuration
+
+[modules]
+autoload = yes
+
+; Disable unused/deprecated modules
+noload => chan_sip.so
+noload => res_hep.so
+noload => res_hep_pjsip.so
+noload => res_hep_rtcp.so
+noload => chan_alsa.so
+noload => chan_console.so
+noload => chan_oss.so
+noload => res_pktccops.so
+noload => res_phoneprov.so
+noload => cdr_custom.so
+noload => cdr_csv.so
+noload => cdr_sqlite3_custom.so
+noload => cdr_odbc.so
+noload => res_adsi.so
+noload => res_smdi.so
+noload => res_mwi_devstate.so
+noload => res_fax.so
+noload => res_fax_spandsp.so
+noload => app_fax.so
+noload => app_amd.so
+noload => app_followme.so
+noload => app_meetme.so
+noload => app_page.so
+noload => app_agent_pool.so
+
+; Preload required modules
+preload => res_odbc.so
+preload => res_config_odbc.so

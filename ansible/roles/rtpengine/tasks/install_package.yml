@@ -1,0 +1,51 @@
+---
+# RTPEngine Package Installation
+# {{ ansible_managed }}
+
+- name: Check if Sipwise repository is configured
+  ansible.builtin.stat:
+    path: /etc/apt/sources.list.d/sipwise.list
+  register: sipwise_repo
+  tags: [rtpengine, install, package]
+
+- name: Add Sipwise GPG key
+  ansible.builtin.get_url:
+    url: https://debian.sipwise.com/spce/sipwise.gpg
+    dest: /etc/apt/trusted.gpg.d/sipwise.asc
+    mode: '0644'
+  become: true
+  when: not sipwise_repo.stat.exists
+  tags: [rtpengine, install, package]
+
+- name: Add Sipwise repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://debian.sipwise.com/spce/mr12.0 bookworm main"
+    state: present
+    filename: sipwise
+  become: true
+  when: not sipwise_repo.stat.exists
+  tags: [rtpengine, install, package]
+
+- name: Update apt cache after adding repository
+  ansible.builtin.apt:
+    update_cache: yes
+  become: true
+  when: not sipwise_repo.stat.exists
+  tags: [rtpengine, install, package]
+
+- name: Install RTPEngine packages
+  ansible.builtin.apt:
+    name:
+      - rtpengine
+      - rtpengine-kernel-dkms
+      - rtpengine-recording-daemon
+    state: present
+  become: true
+  register: rtpengine_package_install
+  tags: [rtpengine, install, package]
+
+- name: Display package installation result
+  ansible.builtin.debug:
+    msg: "RTPEngine packages installed successfully"
+  when: rtpengine_package_install.changed
+  tags: [rtpengine, install, package]

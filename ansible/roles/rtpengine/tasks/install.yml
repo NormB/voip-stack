@@ -1,0 +1,90 @@
+---
+# RTPEngine Installation Tasks
+# {{ ansible_managed }}
+
+- name: Display RTPEngine installation info
+  ansible.builtin.debug:
+    msg: |
+      Installing RTPEngine (native)
+      Method: {{ rtpengine_install_method }}
+      Listen NG: {{ rtpengine_listen_ng }}
+      Port range: {{ rtpengine_port_min }}-{{ rtpengine_port_max }}
+      Kernel module: {{ rtpengine_kernel_module }}
+  tags: [rtpengine, install]
+
+- name: Install RTPEngine dependencies
+  ansible.builtin.apt:
+    name:
+      # Build tools
+      - build-essential
+      - pkg-config
+      - git
+      # Kernel headers for DKMS
+      - "linux-headers-{{ ansible_kernel }}"
+      - dkms
+      # Libraries
+      - libcurl4-openssl-dev
+      - libglib2.0-dev
+      - libavcodec-dev
+      - libavformat-dev
+      - libavutil-dev
+      - libavfilter-dev
+      - libswresample-dev
+      - libevent-dev
+      - libhiredis-dev
+      - libjson-glib-dev
+      - libpcre3-dev
+      - libssl-dev
+      - libxmlrpc-core-c3-dev
+      - libiptc-dev
+      - libsystemd-dev
+      - libmysqlclient-dev
+      - libmariadb-dev
+      - libpcap-dev
+      - libspandsp-dev
+      - libwebsockets-dev
+      - markdown
+      - iptables-dev
+      - zlib1g-dev
+      # Utilities
+      - iptables
+      - netcat-openbsd
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+  tags: [rtpengine, install]
+
+- name: Include package installation
+  ansible.builtin.include_tasks: install_package.yml
+  when: rtpengine_install_method == 'package'
+  tags: [rtpengine, install]
+
+- name: Include source installation
+  ansible.builtin.include_tasks: install_source.yml
+  when: rtpengine_install_method == 'source'
+  tags: [rtpengine, install]
+
+- name: Create RTPEngine user
+  ansible.builtin.user:
+    name: "{{ rtpengine_user }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ rtpengine_run_dir }}"
+    create_home: no
+  become: true
+  tags: [rtpengine, install]
+
+- name: Create RTPEngine directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ rtpengine_user }}"
+    group: "{{ rtpengine_group }}"
+    mode: '0755'
+  become: true
+  loop:
+    - "{{ rtpengine_config_dir }}"
+    - "{{ rtpengine_run_dir }}"
+    - "{{ rtpengine_recording_dir }}"
+  tags: [rtpengine, install]

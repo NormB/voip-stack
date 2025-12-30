@@ -1,0 +1,5 @@
+---
+# freeswitch role - placeholder
+- name: freeswitch placeholder
+  ansible.builtin.debug:
+    msg: "freeswitch role not yet implemented"

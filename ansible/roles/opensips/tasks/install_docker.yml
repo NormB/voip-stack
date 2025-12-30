@@ -1,0 +1,137 @@
+---
+# OpenSIPS Docker Installation
+# {{ ansible_managed }}
+
+- name: Display OpenSIPS Docker installation info
+  ansible.builtin.debug:
+    msg: |
+      Installing OpenSIPS via Docker
+      Image: {{ opensips_docker_image }}
+      Config directory: {{ opensips_config_dir }}
+  tags: [opensips, docker, install]
+
+- name: Ensure Docker role is applied
+  ansible.builtin.include_role:
+    name: docker
+  tags: [opensips, docker, install]
+
+- name: Create OpenSIPS user
+  ansible.builtin.user:
+    name: "{{ opensips_user }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ opensips_run_dir }}"
+    create_home: no
+  become: true
+  tags: [opensips, docker, install]
+
+- name: Create OpenSIPS directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ opensips_user }}"
+    group: "{{ opensips_group }}"
+    mode: '0755'
+  become: true
+  loop:
+    - "{{ opensips_config_dir }}"
+    - "{{ opensips_config_dir }}/tls"
+    - "{{ opensips_run_dir }}"
+    - "{{ opensips_log_dir }}"
+    - "{{ opensips_docker_compose_dir }}"
+  tags: [opensips, docker, install]
+
+- name: Pull OpenSIPS Docker image
+  community.docker.docker_image:
+    name: "{{ opensips_docker_image }}"
+    source: pull
+    force_source: "{{ opensips_docker_pull_always | default(false) }}"
+  become: true
+  register: opensips_image_pull
+  tags: [opensips, docker, install]
+
+- name: Display pulled image info
+  ansible.builtin.debug:
+    msg: "Pulled image: {{ opensips_docker_image }}"
+  when: opensips_image_pull.changed
+  tags: [opensips, docker, install]
+
+- name: Deploy docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ opensips_docker_compose_dir }}/docker-compose.yml"
+    owner: root
+    group: docker
+    mode: '0640'
+  become: true
+  notify: restart opensips
+  tags: [opensips, docker, config]
+
+- name: Create systemd service for docker-compose
+  ansible.builtin.template:
+    src: opensips-docker.service.j2
+    dest: /etc/systemd/system/opensips.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - Reload systemd
+    - restart opensips
+  tags: [opensips, docker, service]
+
+- name: Ensure OpenSIPS container is started
+  ansible.builtin.systemd:
+    name: opensips
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true
+  tags: [opensips, docker, service]
+
+- name: Wait for OpenSIPS to be ready (UDP port check)
+  ansible.builtin.shell: |
+    for i in $(seq 1 30); do
+      nc -z -u {{ internal_ip | default('127.0.0.1') }} 5060 && exit 0
+      sleep 2
+    done
+    exit 1
+  register: opensips_port_check
+  changed_when: false
+  failed_when: opensips_port_check.rc != 0
+  become: true
+  tags: [opensips, docker, verify]
+
+- name: Verify OpenSIPS container is running
+  community.docker.docker_container_info:
+    name: opensips
+  register: opensips_container_info
+  become: true
+  tags: [opensips, docker, verify]
+
+- name: Display container status
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      OPENSIPS CONTAINER STATUS
+      ========================================
+      Container ID: {{ opensips_container_info.container.Id[:12] }}
+      Status: {{ opensips_container_info.container.State.Status }}
+      Started: {{ opensips_container_info.container.State.StartedAt }}
+      Image: {{ opensips_container_info.container.Config.Image }}
+      ========================================
+  when: opensips_container_info.exists
+  tags: [opensips, docker, verify]
+
+- name: Get OpenSIPS version from container
+  ansible.builtin.command:
+    cmd: docker exec opensips opensips -V
+  register: opensips_version_output
+  changed_when: false
+  become: true
+  tags: [opensips, docker, verify]
+
+- name: Display OpenSIPS version
+  ansible.builtin.debug:
+    msg: "{{ opensips_version_output.stdout_lines[:5] }}"
+  tags: [opensips, docker, verify]

@@ -1,0 +1,57 @@
+---
+# OpenSIPS Provisioning Playbook
+# Provisions sip-1 with OpenSIPS from source
+#
+# Usage:
+#   ansible-playbook playbooks/provision-opensips.yml
+#   ansible-playbook playbooks/provision-opensips.yml --check
+
+- name: Provision OpenSIPS on SIP proxy servers
+  hosts: sip_proxies
+  become: yes
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Display provisioning banner
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Provisioning OpenSIPS on {{ inventory_hostname }}
+          IP: {{ ansible_host }}
+          Install method: {{ opensips_install_method | default('source') }}
+          {% if opensips_forgejo_mirror | default('') %}
+          Source: Forgejo mirror
+          {% else %}
+          Source: GitHub
+          {% endif %}
+          ========================================
+
+    - name: Wait for system to be ready
+      ansible.builtin.wait_for_connection:
+        delay: 2
+        timeout: 60
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+  roles:
+    - role: opensips
+      when: opensips_enabled | default(true)
+
+  post_tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          OpenSIPS Installation Complete!
+          ========================================
+
+          Verify with:
+            ssh voip@{{ ansible_host }} 'systemctl status opensips'
+            ssh voip@{{ ansible_host }} 'opensips -V'
+
+          Configuration: /etc/opensips/opensips.cfg
+          Logs: /var/log/opensips/opensips.log
+          ========================================

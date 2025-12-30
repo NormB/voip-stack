@@ -1,0 +1,9 @@
+---
+# Network Configuration Handlers
+
+- name: restart networking
+  ansible.builtin.systemd:
+    name: networking
+    state: restarted
+  # Note: This will briefly disconnect SSH
+  # The playbook should wait for reconnection after this handler fires

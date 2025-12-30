@@ -1,0 +1,149 @@
+---
+# Fail2ban Role - Main Tasks
+# {{ ansible_managed }}
+
+- name: Install fail2ban
+  ansible.builtin.apt:
+    name:
+      - fail2ban
+      - iptables
+      - ipset
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+  tags: [fail2ban, install]
+
+- name: Create fail2ban log directory
+  ansible.builtin.file:
+    path: /var/log/fail2ban
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+  become: true
+  tags: [fail2ban, install]
+
+- name: Ensure OpenSIPS log file exists for fail2ban
+  ansible.builtin.file:
+    path: "{{ fail2ban_opensips_logpath }}"
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+    modification_time: preserve
+    access_time: preserve
+  become: true
+  when: fail2ban_opensips_enabled | bool
+  tags: [fail2ban, install]
+
+- name: Ensure Asterisk log file exists for fail2ban
+  ansible.builtin.file:
+    path: "{{ fail2ban_asterisk_logpath }}"
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+    modification_time: preserve
+    access_time: preserve
+  become: true
+  when: fail2ban_asterisk_enabled | bool
+  tags: [fail2ban, install]
+
+- name: Deploy fail2ban main configuration
+  ansible.builtin.template:
+    src: fail2ban.local.j2
+    dest: /etc/fail2ban/fail2ban.local
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart fail2ban
+  tags: [fail2ban, config]
+
+- name: Deploy fail2ban jail configuration
+  ansible.builtin.template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart fail2ban
+  tags: [fail2ban, config]
+
+- name: Deploy OpenSIPS filter
+  ansible.builtin.template:
+    src: filter.d/opensips.conf.j2
+    dest: /etc/fail2ban/filter.d/opensips.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart fail2ban
+  when: fail2ban_opensips_enabled | bool
+  tags: [fail2ban, config, opensips]
+
+- name: Deploy Asterisk filter
+  ansible.builtin.template:
+    src: filter.d/asterisk.conf.j2
+    dest: /etc/fail2ban/filter.d/asterisk.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart fail2ban
+  when: fail2ban_asterisk_enabled | bool
+  tags: [fail2ban, config, asterisk]
+
+- name: Deploy custom action for VoIP
+  ansible.builtin.template:
+    src: action.d/voip-iptables.conf.j2
+    dest: /etc/fail2ban/action.d/voip-iptables.conf
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify: Restart fail2ban
+  tags: [fail2ban, config]
+
+- name: Ensure fail2ban service is enabled and started
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true
+  when: fail2ban_enabled
+  tags: [fail2ban, service]
+
+- name: Wait for fail2ban socket to be ready
+  ansible.builtin.wait_for:
+    path: /var/run/fail2ban/fail2ban.sock
+    timeout: 30
+  become: true
+  when: fail2ban_enabled
+  ignore_errors: yes
+  register: fail2ban_socket_wait
+  tags: [fail2ban, verify]
+
+- name: Verify fail2ban is running
+  ansible.builtin.command: fail2ban-client status
+  register: fail2ban_status
+  changed_when: false
+  failed_when: false
+  become: true
+  when: fail2ban_enabled and fail2ban_socket_wait is not failed
+  tags: [fail2ban, verify]
+
+- name: Display fail2ban status
+  ansible.builtin.debug:
+    msg: "{{ fail2ban_status.stdout_lines }}"
+  when: fail2ban_status is defined and fail2ban_status.rc is defined and fail2ban_status.rc == 0
+  tags: [fail2ban, verify]
+
+- name: Display fail2ban startup warning
+  ansible.builtin.debug:
+    msg: "Warning: fail2ban service failed to start. Check configuration with 'fail2ban-client -t' on {{ inventory_hostname }}"
+  when: fail2ban_socket_wait is defined and fail2ban_socket_wait is failed
+  tags: [fail2ban, verify]

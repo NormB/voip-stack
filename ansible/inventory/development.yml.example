@@ -1,0 +1,168 @@
+---
+# Ansible Inventory for voip-stack Development Environment
+# Copy this file to development.yml and adjust IPs/hostnames as needed
+# cp development.yml.example development.yml
+
+all:
+  vars:
+    # Environment
+    env: development
+    domain: sip.local
+
+    # devstack-core connection (Mac host)
+    devstack_host: 192.168.64.1
+    vault_addr: "http://{{ devstack_host }}:8200"
+    postgres_host: "{{ devstack_host }}"
+    redis_host: "{{ devstack_host }}"
+    rabbitmq_host: "{{ devstack_host }}"
+    prometheus_host: "{{ devstack_host }}"
+    loki_host: "{{ devstack_host }}"
+    homer_host: "{{ devstack_host }}"
+
+    # Network configuration
+    internal_network: 192.168.64.0/24
+    internal_gateway: 192.168.64.1
+
+    # External network (adjust to your local network)
+    external_network: 192.168.1.0/24
+    external_gateway: 192.168.1.1
+
+    # SSH configuration
+    ansible_user: debian
+    ansible_ssh_private_key_file: ~/.ssh/utm_vms_rsa
+    ansible_become: yes
+    ansible_become_method: sudo
+    ansible_python_interpreter: /usr/bin/python3
+
+  children:
+    # SIP Proxy VMs
+    sip_proxies:
+      hosts:
+        sip-1:
+          ansible_host: 192.168.64.10
+          internal_ip: 192.168.64.10
+          external_ip: 192.168.1.100  # Adjust to your network
+
+          # OpenSIPS configuration
+          opensips_enabled: true
+          opensips_sip_port: 5060
+          opensips_sip_tls_port: 5061
+          opensips_ws_port: 8080
+          opensips_wss_port: 8443
+
+          # Kamailio configuration (Phase 1.5)
+          kamailio_enabled: false  # Enable in Phase 1.5
+          kamailio_sip_port: 5070
+          kamailio_sip_tls_port: 5071
+          kamailio_ws_port: 8090
+          kamailio_wss_port: 8444
+
+      vars:
+        role: sip_proxy
+        has_external_interface: true
+
+    # PBX VMs
+    pbx_servers:
+      hosts:
+        pbx-1:
+          ansible_host: 192.168.64.30
+          internal_ip: 192.168.64.30
+
+          # Asterisk configuration
+          asterisk_enabled: true
+          asterisk_ami_port: 5038
+          asterisk_ari_port: 8088
+
+          # FreeSWITCH configuration (Phase 2.5)
+          freeswitch_enabled: false  # Enable in Phase 2.5
+          freeswitch_esl_port: 8021
+
+          # Call recording
+          recording_path: /mnt/recordings
+          nfs_server: 192.168.64.20
+          nfs_export_path: /srv/recordings
+
+      vars:
+        role: pbx
+        has_external_interface: false
+
+    # Media Proxy VMs
+    media_servers:
+      hosts:
+        media-1:
+          ansible_host: 192.168.64.20
+          internal_ip: 192.168.64.20
+          external_ip: 192.168.1.101  # Adjust to your network
+
+          # RTPEngine configuration
+          rtpengine_listen_ng: "udp:192.168.64.20:2223"
+          rtpengine_port_min: 10000
+          rtpengine_port_max: 20000
+          rtpengine_interface_internal: 192.168.64.20
+          rtpengine_interface_external: 192.168.1.101  # Adjust
+
+          # Recording storage
+          recording_export_path: /srv/recordings
+          recording_storage_gb: 50
+
+      vars:
+        role: media
+        has_external_interface: true
+
+    # Logical groupings
+    voip_vms:
+      children:
+        sip_proxies:
+        pbx_servers:
+        media_servers:
+
+      vars:
+        # Vault AppRole (per-VM roles created during setup)
+        vault_role_id: "{{ lookup('env', 'VAULT_ROLE_ID') }}"
+        vault_secret_id: "{{ lookup('env', 'VAULT_SECRET_ID') }}"
+
+        # Common packages
+        common_packages:
+          - vim
+          - curl
+          - wget
+          - git
+          - htop
+          - iotop
+          - tcpdump
+          - ngrep
+          - sngrep
+          - net-tools
+          - dnsutils
+          - nfs-common
+          - prometheus-node-exporter
+
+        # Monitoring
+        node_exporter_port: 9100
+        promtail_enabled: true
+        promtail_loki_url: "http://{{ loki_host }}:3100/loki/api/v1/push"
+
+        # TLS/PKI
+        vault_pki_path: pki_voip
+        vault_pki_role: voip-server
+        tls_cert_ttl: 8760h  # 1 year
+
+        # Timezone
+        timezone: America/New_York
+
+# Phase 2: Additional VMs for HA
+# Uncomment and configure when implementing Phase 2
+#
+# sip-2:
+#   ansible_host: 192.168.64.11
+#   internal_ip: 192.168.64.11
+#   external_ip: 192.168.1.102
+#
+# pbx-2:
+#   ansible_host: 192.168.64.31
+#   internal_ip: 192.168.64.31
+#
+# media-2:
+#   ansible_host: 192.168.64.21
+#   internal_ip: 192.168.64.21
+#   external_ip: 192.168.1.103

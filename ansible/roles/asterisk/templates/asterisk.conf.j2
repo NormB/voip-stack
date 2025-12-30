@@ -1,0 +1,25 @@
+; {{ ansible_managed }}
+; Asterisk Main Configuration
+
+[directories]
+astetcdir => {{ asterisk_config_dir }}
+astmoddir => /usr/lib/asterisk/modules
+astvarlibdir => /var/lib/asterisk
+astdbdir => /var/lib/asterisk
+astkeydir => /var/lib/asterisk
+astdatadir => /var/lib/asterisk
+astagidir => /var/lib/asterisk/agi-bin
+astspooldir => {{ asterisk_spool_dir }}
+astrundir => {{ asterisk_run_dir }}
+astlogdir => {{ asterisk_log_dir }}
+
+[options]
+verbose = {{ asterisk_log_verbose | default(3) }}
+debug = 0
+runuser = {{ asterisk_user }}
+rungroup = {{ asterisk_group }}
+maxcalls = {{ asterisk_max_calls | default(100) }}
+maxload = 0.9
+maxfiles = {{ asterisk_max_open_files | default(16384) }}
+documentation_language = en_US
+defaultlanguage = en

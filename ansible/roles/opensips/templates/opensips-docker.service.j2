@@ -1,0 +1,37 @@
+# {{ ansible_managed }}
+# OpenSIPS Docker Compose Service
+# Manages OpenSIPS container via docker compose
+
+[Unit]
+Description=OpenSIPS SIP Proxy (Docker)
+Documentation=https://www.opensips.org/Documentation
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ opensips_docker_compose_dir }}
+{% if opensips_docker_pull_always | default(false) %}
+ExecStartPre=/usr/bin/docker compose pull --quiet
+{% endif %}
+ExecStart=/usr/bin/docker compose up --remove-orphans
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose restart opensips
+
+# Restart policy
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+# Environment
+Environment=COMPOSE_PROJECT_NAME=opensips
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=opensips-docker
+
+[Install]
+WantedBy=multi-user.target

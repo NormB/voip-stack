@@ -1,0 +1,20 @@
+---
+# RTPEngine Role - Main Tasks
+# {{ ansible_managed }}
+
+- name: Include installation tasks
+  ansible.builtin.include_tasks: install.yml
+  tags: [rtpengine, install]
+
+- name: Include kernel module tasks
+  ansible.builtin.include_tasks: kernel.yml
+  when: rtpengine_kernel_module
+  tags: [rtpengine, kernel]
+
+- name: Include configuration tasks
+  ansible.builtin.include_tasks: configure.yml
+  tags: [rtpengine, config]
+
+- name: Include service tasks
+  ansible.builtin.include_tasks: service.yml
+  tags: [rtpengine, service]

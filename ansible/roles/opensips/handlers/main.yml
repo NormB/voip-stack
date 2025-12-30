@@ -1,0 +1,45 @@
+---
+# OpenSIPS Handlers
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+  listen: "reload systemd"
+
+- name: Restart opensips (native)
+  ansible.builtin.systemd:
+    name: opensips
+    state: restarted
+  become: true
+  listen: "restart opensips"
+  when: opensips_install_method != 'docker'
+
+- name: Restart opensips (docker)
+  ansible.builtin.shell: |
+    cd {{ opensips_docker_compose_dir | default('/opt/opensips') }}
+    docker compose restart opensips
+  become: true
+  listen: "restart opensips"
+  when: opensips_install_method == 'docker'
+
+- name: Reload opensips (native)
+  ansible.builtin.shell: opensips-cli -x mi reload_routes || kill -HUP $(cat /var/run/opensips/opensips.pid)
+  become: true
+  ignore_errors: yes
+  listen: "reload opensips"
+  when: opensips_install_method != 'docker'
+
+- name: Reload opensips (docker)
+  ansible.builtin.shell: docker exec opensips kill -HUP 1
+  become: true
+  ignore_errors: yes
+  listen: "reload opensips"
+  when: opensips_install_method == 'docker'
+
+- name: Restart rsyslog
+  ansible.builtin.systemd:
+    name: rsyslog
+    state: restarted
+  become: true
+  listen: "restart rsyslog"

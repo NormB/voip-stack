@@ -1,0 +1,5 @@
+---
+# nfs-client role - placeholder
+- name: nfs-client placeholder
+  ansible.builtin.debug:
+    msg: "nfs-client role not yet implemented"

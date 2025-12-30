@@ -1,0 +1,88 @@
+---
+# Asterisk Configuration Tasks
+# {{ ansible_managed }}
+
+- name: Deploy Asterisk configuration files
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "{{ asterisk_config_dir }}/{{ item.dest }}"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  loop:
+    - { src: "asterisk.conf.j2", dest: "asterisk.conf" }
+    - { src: "modules.conf.j2", dest: "modules.conf" }
+    - { src: "logger.conf.j2", dest: "logger.conf" }
+  notify: Reload asterisk
+  tags: [asterisk, config]
+
+- name: Deploy PJSIP configuration
+  ansible.builtin.template:
+    src: pjsip.conf.j2
+    dest: "{{ asterisk_config_dir }}/pjsip.conf"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  notify: Reload asterisk
+  tags: [asterisk, config, pjsip]
+
+- name: Deploy extensions configuration
+  ansible.builtin.template:
+    src: extensions.conf.j2
+    dest: "{{ asterisk_config_dir }}/extensions.conf"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  notify: Reload asterisk
+  tags: [asterisk, config, dialplan]
+
+- name: Deploy AMI configuration
+  ansible.builtin.template:
+    src: manager.conf.j2
+    dest: "{{ asterisk_config_dir }}/manager.conf"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  notify: Reload asterisk
+  when: asterisk_ami_enabled
+  tags: [asterisk, config, ami]
+
+- name: Deploy ARI configuration
+  ansible.builtin.template:
+    src: ari.conf.j2
+    dest: "{{ asterisk_config_dir }}/ari.conf"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  notify: Reload asterisk
+  when: asterisk_ari_enabled
+  tags: [asterisk, config, ari]
+
+- name: Deploy CDR configuration
+  ansible.builtin.template:
+    src: cdr.conf.j2
+    dest: "{{ asterisk_config_dir }}/cdr.conf"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  notify: Reload asterisk
+  when: asterisk_cdr_enabled
+  tags: [asterisk, config, cdr]
+
+- name: Deploy voicemail configuration
+  ansible.builtin.template:
+    src: voicemail.conf.j2
+    dest: "{{ asterisk_config_dir }}/voicemail.conf"
+    owner: "{{ asterisk_user }}"
+    group: "{{ asterisk_group }}"
+    mode: '0640'
+  become: true
+  notify: Reload asterisk
+  when: asterisk_voicemail_enabled
+  tags: [asterisk, config, voicemail]

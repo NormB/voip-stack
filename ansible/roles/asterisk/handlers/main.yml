@@ -1,0 +1,30 @@
+---
+# Asterisk Handlers
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Restart asterisk
+  ansible.builtin.systemd:
+    name: asterisk
+    state: restarted
+  become: true
+
+- name: Reload asterisk
+  ansible.builtin.shell: |
+    {% if asterisk_install_method == 'docker' %}
+    docker exec asterisk asterisk -rx "core reload"
+    {% else %}
+    asterisk -rx "core reload"
+    {% endif %}
+  become: true
+
+# Docker-specific handlers
+- name: Restart asterisk container
+  ansible.builtin.shell: |
+    cd {{ asterisk_docker_compose_dir }}
+    docker compose restart asterisk
+  become: true
+  when: asterisk_install_method == 'docker'

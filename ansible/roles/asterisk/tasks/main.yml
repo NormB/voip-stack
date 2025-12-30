@@ -1,0 +1,15 @@
+---
+# Asterisk Role - Main Tasks
+# {{ ansible_managed }}
+
+- name: Include installation tasks based on method
+  ansible.builtin.include_tasks: "install_{{ asterisk_install_method }}.yml"
+  tags: [asterisk, install]
+
+- name: Include configuration tasks
+  ansible.builtin.include_tasks: configure.yml
+  tags: [asterisk, config]
+
+- name: Include service tasks
+  ansible.builtin.include_tasks: service.yml
+  tags: [asterisk, service]

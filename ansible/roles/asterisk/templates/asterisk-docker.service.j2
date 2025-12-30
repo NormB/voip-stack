@@ -1,0 +1,37 @@
+# {{ ansible_managed }}
+# Asterisk Docker Compose Service
+# Manages Asterisk container via docker compose
+
+[Unit]
+Description=Asterisk PBX (Docker)
+Documentation=https://docs.asterisk.org/
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={{ asterisk_docker_compose_dir }}
+{% if asterisk_docker_pull_always | default(false) %}
+ExecStartPre=/usr/bin/docker compose pull --quiet
+{% endif %}
+ExecStart=/usr/bin/docker compose up --remove-orphans
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose restart asterisk
+
+# Restart policy
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+TimeoutStopSec=30
+
+# Environment
+Environment=COMPOSE_PROJECT_NAME=asterisk
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=asterisk-docker
+
+[Install]
+WantedBy=multi-user.target

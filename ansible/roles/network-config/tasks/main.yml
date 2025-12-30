@@ -1,0 +1,94 @@
+---
+# Network Configuration Role
+# Configures static IP addresses on VMs after DHCP bootstrap
+#
+# This role:
+# 1. Installs ifupdown for network configuration
+# 2. Configures static IP on eth0 (internal network)
+# 3. Optionally configures eth1 (external network) if present
+# 4. Restarts networking to apply changes
+
+- name: Install network dependencies
+  ansible.builtin.apt:
+    name:
+      - ifupdown
+      - resolvconf
+    state: present
+    update_cache: yes
+    cache_valid_time: 3600
+  tags: [network, packages]
+
+- name: Check if eth1 interface exists
+  ansible.builtin.stat:
+    path: /sys/class/net/eth1
+  register: eth1_check
+  tags: [network]
+
+- name: Flush DHCP lease before switching to static
+  ansible.builtin.command: dhclient -r eth0
+  ignore_errors: yes
+  changed_when: false
+  tags: [network]
+
+- name: Configure network interfaces
+  ansible.builtin.template:
+    src: interfaces.j2
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: '0644'
+    backup: yes
+  register: network_config
+  notify: restart networking
+  tags: [network, config]
+
+- name: Ensure networking service is enabled
+  ansible.builtin.systemd:
+    name: networking
+    enabled: yes
+  tags: [network]
+
+- name: Flush handlers to restart networking
+  ansible.builtin.meta: flush_handlers
+  tags: [network]
+
+- name: Wait for network to stabilize
+  ansible.builtin.pause:
+    seconds: 5
+  when: network_config.changed
+  tags: [network]
+
+- name: Verify static IP configuration
+  ansible.builtin.command: ip -4 addr show eth0
+  register: ip_check
+  changed_when: false
+  tags: [network, verify]
+
+- name: Display configured IP
+  ansible.builtin.debug:
+    msg: "eth0 configured with: {{ ip_check.stdout_lines | select('search', 'inet ') | list }}"
+  tags: [network, verify]
+
+- name: Test gateway connectivity
+  ansible.builtin.command: ping -c 3 -W 5 {{ internal_gateway }}
+  register: gateway_ping
+  changed_when: false
+  failed_when: false
+  tags: [network, verify]
+
+- name: Display gateway test result
+  ansible.builtin.debug:
+    msg: "Gateway {{ internal_gateway }} is {{ 'reachable' if gateway_ping.rc == 0 else 'UNREACHABLE' }}"
+  tags: [network, verify]
+
+- name: Test DNS resolution
+  ansible.builtin.command: host google.com
+  register: dns_test
+  changed_when: false
+  failed_when: false
+  tags: [network, verify]
+
+- name: Display DNS test result
+  ansible.builtin.debug:
+    msg: "DNS resolution is {{ 'working' if dns_test.rc == 0 else 'FAILED' }}"
+  tags: [network, verify]

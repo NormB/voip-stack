@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# Log rotation for VoIP services on {{ inventory_hostname }}
+
+/var/log/voip/*.log {
+    daily
+    missingok
+    rotate {{ logging.log_rotation.max_age | default(30) }}
+    size {{ logging.log_rotation.max_size | default('100M') }}
+{% if logging.log_rotation.compress | default(true) %}
+    compress
+    delaycompress
+{% endif %}
+    notifempty
+    create 0640 root adm
+    sharedscripts
+    postrotate
+        /usr/bin/systemctl reload rsyslog > /dev/null 2>&1 || true
+    endscript
+}

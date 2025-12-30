@@ -1,0 +1,71 @@
+---
+# RTPEngine Kernel Module Tasks
+# {{ ansible_managed }}
+
+- name: Check if kernel module is loaded
+  ansible.builtin.shell: lsmod | grep xt_RTPENGINE
+  register: kernel_module_loaded
+  failed_when: false
+  changed_when: false
+  tags: [rtpengine, kernel]
+
+- name: Load RTPEngine kernel module
+  community.general.modprobe:
+    name: xt_RTPENGINE
+    state: present
+  become: true
+  when: kernel_module_loaded.rc != 0
+  tags: [rtpengine, kernel]
+
+- name: Ensure kernel module loads on boot
+  ansible.builtin.lineinfile:
+    path: /etc/modules-load.d/rtpengine.conf
+    line: xt_RTPENGINE
+    create: yes
+    mode: '0644'
+  become: true
+  tags: [rtpengine, kernel]
+
+- name: Create iptables table for RTPEngine
+  ansible.builtin.shell: |
+    if ! iptables -t filter -L rtpengine 2>/dev/null; then
+      iptables -N rtpengine
+    fi
+    if ! iptables -C INPUT -j rtpengine 2>/dev/null; then
+      iptables -I INPUT -j rtpengine
+    fi
+  become: true
+  changed_when: false
+  tags: [rtpengine, kernel]
+
+- name: Add rtpengine iptables rule for forwarding
+  ansible.builtin.shell: |
+    if ! iptables -C rtpengine -p udp -j RTPENGINE --id {{ rtpengine_kernel_table }} 2>/dev/null; then
+      iptables -A rtpengine -p udp -j RTPENGINE --id {{ rtpengine_kernel_table }}
+    fi
+  become: true
+  changed_when: false
+  tags: [rtpengine, kernel]
+
+- name: Verify kernel module is loaded
+  ansible.builtin.command: lsmod
+  register: lsmod_output
+  changed_when: false
+  tags: [rtpengine, kernel, verify]
+
+- name: Display kernel module status
+  ansible.builtin.debug:
+    msg: "xt_RTPENGINE module loaded: {{ 'xt_RTPENGINE' in lsmod_output.stdout }}"
+  tags: [rtpengine, kernel, verify]
+
+- name: Check proc interface
+  ansible.builtin.stat:
+    path: "/proc/rtpengine/{{ rtpengine_kernel_table }}/list"
+  register: rtpengine_proc
+  tags: [rtpengine, kernel, verify]
+
+- name: Create proc interface if not exists
+  ansible.builtin.shell: echo 'add {{ rtpengine_kernel_table }}' > /proc/rtpengine/control
+  become: true
+  when: not rtpengine_proc.stat.exists
+  tags: [rtpengine, kernel]

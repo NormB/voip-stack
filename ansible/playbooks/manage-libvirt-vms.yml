@@ -1,0 +1,323 @@
+---
+# Ansible playbook for managing libvirt VMs on macOS
+# {{ ansible_managed }}
+#
+# Usage:
+#   ansible-playbook playbooks/manage-libvirt-vms.yml -e action=create
+#   ansible-playbook playbooks/manage-libvirt-vms.yml -e action=start
+#   ansible-playbook playbooks/manage-libvirt-vms.yml -e action=stop
+#   ansible-playbook playbooks/manage-libvirt-vms.yml -e action=destroy
+#   ansible-playbook playbooks/manage-libvirt-vms.yml -e action=status
+
+- name: Manage voip-stack libvirt VMs
+  hosts: localhost
+  connection: local
+  gather_facts: true
+
+  vars:
+    libvirt_dir: "{{ playbook_dir }}/../../libvirt"
+    images_dir: "{{ libvirt_dir }}/images"
+    domains_dir: "{{ libvirt_dir }}/domains"
+    cloud_init_dir: "{{ libvirt_dir }}/cloud-init"
+    libvirt_uri: "qemu:///session"
+
+    debian_image_url: "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2"
+    debian_image_name: "debian-12-generic-arm64.qcow2"
+
+    vms:
+      - name: sip-1
+        ram_gb: 2
+        cpu: 2
+        ip: 192.168.64.10
+        has_eth1: true
+      - name: pbx-1
+        ram_gb: 4
+        cpu: 2
+        ip: 192.168.64.30
+        has_eth1: false
+      - name: media-1
+        ram_gb: 4
+        cpu: 4
+        ip: 192.168.64.20
+        has_eth1: true
+
+    action: status  # Default action
+
+  tasks:
+    # ==================== STATUS ====================
+    - name: Show VM status
+      when: action == "status"
+      block:
+        - name: Get VM list
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} list --all
+          register: vm_list
+          changed_when: false
+
+        - name: Display VM status
+          ansible.builtin.debug:
+            msg: "{{ vm_list.stdout_lines }}"
+
+    # ==================== CREATE ====================
+    - name: Create VMs
+      when: action == "create"
+      block:
+        - name: Ensure directories exist
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: directory
+            mode: '0755'
+          loop:
+            - "{{ images_dir }}"
+            - "{{ domains_dir }}"
+            - "{{ cloud_init_dir }}"
+
+        - name: Check for socket_vmnet
+          ansible.builtin.stat:
+            path: /opt/homebrew/var/run/socket_vmnet.shared
+          register: socket_vmnet_check
+
+        - name: Warn if socket_vmnet not running
+          ansible.builtin.debug:
+            msg: "WARNING: socket_vmnet not running. Run: sudo {{ libvirt_dir }}/setup-socket-vmnet.sh"
+          when: not socket_vmnet_check.stat.exists
+
+        - name: Check if Debian image exists
+          ansible.builtin.stat:
+            path: "{{ images_dir }}/{{ debian_image_name }}"
+          register: debian_image
+
+        - name: Download Debian cloud image
+          ansible.builtin.get_url:
+            url: "{{ debian_image_url }}"
+            dest: "{{ images_dir }}/{{ debian_image_name }}"
+            mode: '0644'
+          when: not debian_image.stat.exists
+
+        - name: Get SSH public key
+          ansible.builtin.shell:
+            cmd: |
+              if [ -f ~/.ssh/id_ed25519.pub ]; then
+                cat ~/.ssh/id_ed25519.pub
+              elif [ -f ~/.ssh/id_rsa.pub ]; then
+                cat ~/.ssh/id_rsa.pub
+              else
+                echo "NO_SSH_KEY_FOUND"
+              fi
+          register: ssh_key
+          changed_when: false
+
+        - name: Fail if no SSH key
+          ansible.builtin.fail:
+            msg: "No SSH public key found. Run: ssh-keygen -t ed25519"
+          when: ssh_key.stdout == "NO_SSH_KEY_FOUND"
+
+        - name: Create VM disks
+          ansible.builtin.command:
+            cmd: >
+              qemu-img create -f qcow2
+              -b {{ images_dir }}/{{ debian_image_name }}
+              -F qcow2
+              {{ images_dir }}/{{ item.name }}.qcow2
+              50G
+            creates: "{{ images_dir }}/{{ item.name }}.qcow2"
+          loop: "{{ vms }}"
+
+        - name: Create cloud-init directories
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: "cloudinit_{{ item.name }}_"
+          register: cloudinit_temps
+          loop: "{{ vms }}"
+
+        - name: Create meta-data files
+          ansible.builtin.copy:
+            content: |
+              instance-id: {{ item.item.name }}
+              local-hostname: {{ item.item.name }}
+            dest: "{{ item.path }}/meta-data"
+            mode: '0644'
+          loop: "{{ cloudinit_temps.results }}"
+
+        - name: Create user-data files
+          ansible.builtin.copy:
+            content: |
+              #cloud-config
+              hostname: {{ item.item.name }}
+              fqdn: {{ item.item.name }}.local
+              manage_etc_hosts: true
+
+              users:
+                - name: debian
+                  gecos: Debian User
+                  sudo: ALL=(ALL) NOPASSWD:ALL
+                  groups: users, admin, sudo
+                  shell: /bin/bash
+                  lock_passwd: false
+                  passwd: $6$rounds=4096$saltsalt$hashedpassword
+                  ssh_authorized_keys:
+                    - {{ ssh_key.stdout }}
+
+              ssh_pwauth: true
+
+              packages:
+                - qemu-guest-agent
+                - vim
+                - curl
+                - wget
+                - net-tools
+                - dnsutils
+                - htop
+                - sudo
+
+              runcmd:
+                - systemctl enable qemu-guest-agent
+                - systemctl start qemu-guest-agent
+                - echo "{{ item.item.name }} cloud-init complete" > /var/log/cloud-init-done
+
+              final_message: "Cloud-init complete for {{ item.item.name }}"
+            dest: "{{ item.path }}/user-data"
+            mode: '0644'
+          loop: "{{ cloudinit_temps.results }}"
+
+        - name: Copy network configs
+          ansible.builtin.copy:
+            src: "{{ cloud_init_dir }}/network-config-{{ item.item.name }}.yaml"
+            dest: "{{ item.path }}/network-config"
+            mode: '0644'
+          loop: "{{ cloudinit_temps.results }}"
+          ignore_errors: true
+
+        - name: Create cloud-init ISOs
+          ansible.builtin.command:
+            cmd: >
+              hdiutil makehybrid -iso -joliet
+              -o {{ images_dir }}/{{ item.item.name }}-cidata.iso
+              {{ item.path }}
+            creates: "{{ images_dir }}/{{ item.item.name }}-cidata.iso"
+          loop: "{{ cloudinit_temps.results }}"
+
+        - name: Clean up temp directories
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ cloudinit_temps.results }}"
+
+        - name: Check if VMs already defined
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} list --all --name
+          register: existing_vms
+          changed_when: false
+
+        - name: Define VMs
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} define {{ domains_dir }}/{{ item.name }}.xml
+          loop: "{{ vms }}"
+          when: item.name not in existing_vms.stdout_lines
+
+        - name: Show completion message
+          ansible.builtin.debug:
+            msg: |
+              VMs created successfully!
+
+              To start VMs:
+                ansible-playbook playbooks/manage-libvirt-vms.yml -e action=start
+
+              Or manually:
+                virsh -c qemu:///session start sip-1
+                virsh -c qemu:///session start pbx-1
+                virsh -c qemu:///session start media-1
+
+    # ==================== START ====================
+    - name: Start VMs
+      when: action == "start"
+      block:
+        - name: Start each VM
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} start {{ item.name }}
+          loop: "{{ vms }}"
+          register: start_result
+          failed_when: false
+          changed_when: start_result.rc == 0
+
+        - name: Show start results
+          ansible.builtin.debug:
+            msg: "{{ item.item.name }}: {{ 'started' if item.rc == 0 else 'already running or not defined' }}"
+          loop: "{{ start_result.results }}"
+
+        - name: Wait for VMs to boot
+          ansible.builtin.debug:
+            msg: |
+              VMs starting. Wait 30-60 seconds for boot.
+
+              SSH access:
+                ssh debian@192.168.64.10  # sip-1
+                ssh debian@192.168.64.30  # pbx-1
+                ssh debian@192.168.64.20  # media-1
+
+    # ==================== STOP ====================
+    - name: Stop VMs
+      when: action == "stop"
+      block:
+        - name: Shutdown each VM gracefully
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} shutdown {{ item.name }}
+          loop: "{{ vms }}"
+          register: stop_result
+          failed_when: false
+          changed_when: stop_result.rc == 0
+
+        - name: Show stop results
+          ansible.builtin.debug:
+            msg: "{{ item.item.name }}: {{ 'shutdown initiated' if item.rc == 0 else 'not running' }}"
+          loop: "{{ stop_result.results }}"
+
+    # ==================== DESTROY ====================
+    - name: Destroy VMs
+      when: action == "destroy"
+      block:
+        - name: Force stop each VM
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} destroy {{ item.name }}
+          loop: "{{ vms }}"
+          failed_when: false
+          changed_when: true
+
+        - name: Undefine each VM
+          ansible.builtin.command:
+            cmd: virsh -c {{ libvirt_uri }} undefine {{ item.name }}
+          loop: "{{ vms }}"
+          failed_when: false
+          changed_when: true
+
+        - name: Remove VM disks
+          ansible.builtin.file:
+            path: "{{ images_dir }}/{{ item.name }}.qcow2"
+            state: absent
+          loop: "{{ vms }}"
+
+        - name: Remove cloud-init ISOs
+          ansible.builtin.file:
+            path: "{{ images_dir }}/{{ item.name }}-cidata.iso"
+            state: absent
+          loop: "{{ vms }}"
+
+        - name: Show destroy message
+          ansible.builtin.debug:
+            msg: "All VMs destroyed and disks removed"
+
+    # ==================== WAIT ====================
+    - name: Wait for VMs to be accessible
+      when: action == "wait"
+      block:
+        - name: Wait for SSH on each VM
+          ansible.builtin.wait_for:
+            host: "{{ item.ip }}"
+            port: 22
+            timeout: 180
+            state: started
+          loop: "{{ vms }}"
+
+        - name: VMs are ready
+          ansible.builtin.debug:
+            msg: "All VMs are accessible via SSH"

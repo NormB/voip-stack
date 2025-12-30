@@ -1,0 +1,172 @@
+################################################################
+# OpenSIPS Configuration - voip-stack
+#
+# This is an example configuration file for OpenSIPS
+# The actual configuration is templated by Ansible from:
+# ansible/roles/opensips/templates/opensips.cfg.j2
+#
+# This example shows the structure and key modules
+################################################################
+
+# Global Parameters
+log_level=3
+log_stderror=no
+log_facility=LOG_LOCAL0
+
+children=4
+auto_aliases=no
+
+listen=udp:192.168.64.10:5060
+listen=tcp:192.168.64.10:5060
+listen=tls:192.168.64.10:5061
+
+# TLS
+tls_ca_list=/etc/ssl/voip/ca.pem
+tls_certificate=/etc/ssl/voip/cert.pem
+tls_private_key=/etc/ssl/voip/key.pem
+
+# Module Loading
+loadmodule "db_postgres.so"
+loadmodule "signaling.so"
+loadmodule "sl.so"
+loadmodule "tm.so"
+loadmodule "rr.so"
+loadmodule "maxfwd.so"
+loadmodule "usrloc.so"
+loadmodule "registrar.so"
+loadmodule "auth.so"
+loadmodule "auth_db.so"
+loadmodule "dialog.so"
+loadmodule "dispatcher.so"
+loadmodule "rtpengine.so"
+loadmodule "proto_udp.so"
+loadmodule "proto_tcp.so"
+loadmodule "proto_tls.so"
+loadmodule "proto_hep.so"
+loadmodule "sipmsgops.so"
+loadmodule "uri.so"
+loadmodule "textops.so"
+
+# Database Configuration
+modparam("usrloc", "db_url", "postgres://opensips:PASSWORD@192.168.64.1:5432/opensips")
+modparam("auth_db", "db_url", "postgres://opensips:PASSWORD@192.168.64.1:5432/opensips")
+modparam("dialog", "db_url", "postgres://opensips:PASSWORD@192.168.64.1:5432/opensips")
+
+# Usrloc Module
+modparam("usrloc", "db_mode", 2)
+modparam("usrloc", "nat_bflag", "NAT")
+
+# Registrar Module
+modparam("registrar", "max_expires", 3600)
+modparam("registrar", "min_expires", 60)
+
+# Authentication
+modparam("auth_db", "calculate_ha1", yes)
+modparam("auth_db", "password_column", "password")
+modparam("auth_db", "load_credentials", "")
+
+# Dialog Module
+modparam("dialog", "dlg_flag", 4)
+modparam("dialog", "db_mode", 1)
+
+# RTPEngine Module
+modparam("rtpengine", "rtpengine_sock", "udp:192.168.64.20:2223")
+
+# Dispatcher Module (RTPEngine failover)
+modparam("dispatcher", "db_url", "postgres://opensips:PASSWORD@192.168.64.1:5432/opensips")
+modparam("dispatcher", "ds_ping_interval", 30)
+modparam("dispatcher", "ds_probing_mode", 1)
+
+# Homer HEP Capture
+modparam("proto_hep", "hep_id", "[hep_dst] 192.168.64.1:9060; transport=udp; version=3")
+modparam("siptrace", "trace_id", "[tid]uri=hep:hep_dst")
+
+# Routing Logic
+route {
+    # Initial sanity checks
+    if (!mf_process_maxfwd_header(10)) {
+        sl_send_reply(483, "Too Many Hops");
+        exit;
+    }
+
+    if (msg:len > 4096) {
+        sl_send_reply(513, "Message Too Large");
+        exit;
+    }
+
+    # Record routing for dialog
+    if (has_totag()) {
+        if (loose_route()) {
+            if (is_method("INVITE")) {
+                record_route();
+            }
+            route(relay);
+        } else {
+            if (is_method("ACK")) {
+                if (t_check_trans()) {
+                    t_relay();
+                    exit;
+                } else {
+                    exit;
+                }
+            }
+            sl_send_reply(404, "Not Found");
+        }
+        exit;
+    }
+
+    # Initial request processing
+    record_route();
+
+    # Handle REGISTER
+    if (is_method("REGISTER")) {
+        route(auth);
+        if (!save("location")) {
+            sl_reply_error();
+        }
+        exit;
+    }
+
+    # Handle INVITE
+    if (is_method("INVITE")) {
+        route(auth);
+        create_dialog();
+        route(rtpengine_offer);
+        route(relay);
+        exit;
+    }
+
+    # Default handling
+    route(relay);
+}
+
+# Authentication route
+route[auth] {
+    if (!proxy_authorize("", "subscriber")) {
+        proxy_challenge("", "0");
+        exit;
+    }
+    consume_credentials();
+}
+
+# RTPEngine offer route
+route[rtpengine_offer] {
+    if (has_body("application/sdp")) {
+        rtpengine_offer("replace-origin replace-session-connection ICE=remove");
+    }
+}
+
+# RTPEngine answer route
+onreply_route {
+    if (has_body("application/sdp")) {
+        rtpengine_answer("replace-origin replace-session-connection ICE=remove");
+    }
+}
+
+# Relay route
+route[relay] {
+    if (!t_relay()) {
+        sl_reply_error();
+    }
+    exit;
+}

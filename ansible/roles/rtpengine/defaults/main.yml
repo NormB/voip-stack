@@ -1,0 +1,114 @@
+---
+# RTPEngine Role - Default Variables
+# Native installation only (kernel module required)
+
+rtpengine_enabled: true
+
+# ============================================================================
+# Installation
+# ============================================================================
+# Installation method: 'package' or 'source'
+# Note: Docker is NOT supported - kernel module requires native installation
+rtpengine_install_method: package
+
+# For source installation
+rtpengine_version: "mr12.0"
+rtpengine_git_repo: "https://github.com/sipwise/rtpengine.git"
+rtpengine_build_dir: "/usr/local/src/rtpengine"
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+# NG protocol listen address (for OpenSIPS/Kamailio communication)
+rtpengine_listen_ng: "{{ internal_ip | default('192.168.64.20') }}:2223"
+
+# CLI listen address
+rtpengine_listen_cli: "127.0.0.1:9900"
+
+# RTP port range
+rtpengine_port_min: 10000
+rtpengine_port_max: 20000
+
+# Network interfaces
+# Internal interface (to VoIP components)
+rtpengine_interface_internal: "{{ internal_ip | default('192.168.64.20') }}"
+# External interface (to public/WAN - if available)
+rtpengine_interface_external: "{{ external_ip | default('') }}"
+
+# Interface string for config
+# Format: "internal/external" or just "internal" if no external
+rtpengine_interfaces: >-
+  {% if rtpengine_interface_external | length > 0 %}
+  {{ rtpengine_interface_internal }}/{{ rtpengine_interface_external }}
+  {% else %}
+  {{ rtpengine_interface_internal }}
+  {% endif %}
+
+# ============================================================================
+# Protocol Settings
+# ============================================================================
+# DTLS/SRTP settings
+rtpengine_dtls_enabled: true
+rtpengine_dtls_passive: false
+
+# ICE support
+rtpengine_ice_enabled: true
+rtpengine_ice_lite: true
+
+# Codec transcoding (requires ffmpeg)
+rtpengine_transcode_enabled: false
+
+# ============================================================================
+# Kernel Module
+# ============================================================================
+rtpengine_kernel_module: true
+rtpengine_kernel_table: 0
+
+# ============================================================================
+# Recording
+# ============================================================================
+rtpengine_recording_enabled: false
+rtpengine_recording_dir: "/var/spool/rtpengine"
+rtpengine_recording_method: "proc"
+rtpengine_recording_format: "wav"
+
+# ============================================================================
+# Homer/HEP Integration
+# ============================================================================
+rtpengine_homer_enabled: "{{ opensips_hep_enabled | default(true) }}"
+rtpengine_homer_host: "{{ homer_host | default('192.168.64.1') }}"
+rtpengine_homer_port: 9060
+rtpengine_homer_protocol: "udp"
+rtpengine_homer_id: 2002
+
+# ============================================================================
+# Logging
+# ============================================================================
+rtpengine_log_level: 6
+rtpengine_log_facility: "daemon"
+rtpengine_log_stderr: false
+
+# ============================================================================
+# Service
+# ============================================================================
+rtpengine_user: rtpengine
+rtpengine_group: rtpengine
+rtpengine_config_dir: "/etc/rtpengine"
+rtpengine_run_dir: "/var/run/rtpengine"
+
+# PID file
+rtpengine_pidfile: "{{ rtpengine_run_dir }}/rtpengine.pid"
+
+# ============================================================================
+# Performance Tuning
+# ============================================================================
+# CPU affinity (leave empty for auto)
+rtpengine_cpu_affinity: ""
+
+# Maximum simultaneous calls (0 = unlimited)
+rtpengine_max_sessions: 0
+
+# Timeout settings (seconds)
+rtpengine_timeout: 60
+rtpengine_silent_timeout: 30
+rtpengine_final_timeout: 10800

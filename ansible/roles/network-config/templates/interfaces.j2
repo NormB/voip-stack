@@ -1,0 +1,46 @@
+# {{ ansible_managed }}
+#
+# Network configuration for {{ inventory_hostname }}
+# Internal IP: {{ internal_ip }}
+# Domain: {{ domain }}
+#
+# This file is managed by Ansible. Manual changes will be overwritten.
+
+# Loopback interface
+auto lo
+iface lo inet loopback
+
+# eth0 - Internal network (static)
+# Used for: DevStack Core communication, inter-VM traffic, management
+auto eth0
+iface eth0 inet static
+    address {{ internal_ip }}/24
+    gateway {{ internal_gateway | default('192.168.64.1') }}
+    dns-nameservers {{ colima_host | default('192.168.64.1') }}
+    dns-search {{ domain | default('sip.local') }}
+    # Ensure interface comes up on boot
+    pre-up sleep 2
+    # Set default route via internal gateway
+    post-up ip route add default via {{ internal_gateway | default('192.168.64.1') }} || true
+
+{% if has_external_interface | default(false) and ansible_eth1 is defined %}
+# eth1 - External network (bridged to Mac LAN)
+# Used for: External SIP clients, trunk providers, RTP media
+auto eth1
+{% if external_ip is defined and external_ip != '' %}
+# Static configuration for eth1
+iface eth1 inet static
+    address {{ external_ip }}/24
+    {% if external_gateway is defined and external_gateway != '' %}
+    # Note: Default route is via eth0 (internal), not eth1
+    # Add static routes for specific external destinations if needed
+    # up ip route add 192.168.1.0/24 via {{ external_gateway }} dev eth1
+    {% endif %}
+    dns-nameservers 8.8.8.8 8.8.4.4
+{% else %}
+# DHCP configuration for eth1
+iface eth1 inet dhcp
+    # Prevent eth1 from becoming default route (eth0 should be default)
+    post-up ip route del default dev eth1 || true
+{% endif %}
+{% endif %}

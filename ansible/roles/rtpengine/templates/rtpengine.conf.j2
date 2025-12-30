@@ -1,0 +1,78 @@
+# {{ ansible_managed }}
+# RTPEngine Configuration
+# Host: {{ inventory_hostname }}
+
+[rtpengine]
+# Network interfaces
+# Format: IP or IP/advertised-IP
+interface = {{ rtpengine_interfaces | trim }}
+
+# NG protocol listener (for OpenSIPS/Kamailio)
+listen-ng = {{ rtpengine_listen_ng }}
+
+# CLI listener
+listen-cli = {{ rtpengine_listen_cli }}
+
+# RTP port range
+port-min = {{ rtpengine_port_min }}
+port-max = {{ rtpengine_port_max }}
+
+# Kernel module table
+{% if rtpengine_kernel_module %}
+table = {{ rtpengine_kernel_table }}
+{% else %}
+table = -1
+{% endif %}
+
+# Timeouts (seconds)
+timeout = {{ rtpengine_timeout }}
+silent-timeout = {{ rtpengine_silent_timeout }}
+final-timeout = {{ rtpengine_final_timeout }}
+
+# TOS/DSCP
+tos = 184
+
+# Logging
+log-level = {{ rtpengine_log_level }}
+log-facility = {{ rtpengine_log_facility }}
+{% if rtpengine_log_stderr %}
+log-stderr = true
+{% endif %}
+
+# PID file
+pidfile = {{ rtpengine_pidfile }}
+
+# Run in foreground (for systemd)
+foreground = true
+
+# No daemon mode
+no-fallback = false
+
+{% if rtpengine_dtls_enabled %}
+# DTLS settings
+dtls-passive = {{ rtpengine_dtls_passive | lower }}
+{% endif %}
+
+{% if rtpengine_max_sessions > 0 %}
+# Maximum sessions
+max-sessions = {{ rtpengine_max_sessions }}
+{% endif %}
+
+{% if rtpengine_cpu_affinity %}
+# CPU affinity
+cpu-affinity = {{ rtpengine_cpu_affinity }}
+{% endif %}
+
+{% if rtpengine_homer_enabled %}
+# Homer/HEP integration
+homer = {{ rtpengine_homer_host }}:{{ rtpengine_homer_port }}
+homer-protocol = {{ rtpengine_homer_protocol }}
+homer-id = {{ rtpengine_homer_id }}
+{% endif %}
+
+{% if rtpengine_recording_enabled %}
+# Recording
+recording-dir = {{ rtpengine_recording_dir }}
+recording-method = {{ rtpengine_recording_method }}
+recording-format = {{ rtpengine_recording_format }}
+{% endif %}

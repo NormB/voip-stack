@@ -1,0 +1,12 @@
+---
+# Network Configuration Role Defaults
+
+# Internal network settings
+internal_gateway: "192.168.64.1"
+domain: "sip.local"
+colima_host: "192.168.64.1"
+
+# External interface configuration
+has_external_interface: false
+external_ip: ""
+external_gateway: ""

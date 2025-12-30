@@ -1,0 +1,20 @@
+; {{ ansible_managed }}
+; Asterisk REST Interface (ARI) Configuration
+;
+
+[general]
+enabled=yes
+pretty=yes
+allowed_origins=*
+
+[{{ asterisk_ari_user | default('admin') }}]
+type=user
+read_only=no
+password={{ asterisk_ari_password | default('changeme') }}
+
+{% if asterisk_ari_readonly_user is defined %}
+[{{ asterisk_ari_readonly_user }}]
+type=user
+read_only=yes
+password={{ asterisk_ari_readonly_password | default('readonly') }}
+{% endif %}

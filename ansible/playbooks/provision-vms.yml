@@ -1,0 +1,166 @@
+---
+# Main VM Provisioning Playbook
+# Provisions all VoIP VMs with required components
+#
+# Usage:
+#   ansible-playbook playbooks/provision-vms.yml
+#   ansible-playbook playbooks/provision-vms.yml --limit sip_proxies
+#   ansible-playbook playbooks/provision-vms.yml --tags opensips
+
+- name: Provision all VoIP VMs
+  hosts: voip_vms
+  become: yes
+  gather_facts: yes
+
+  pre_tasks:
+    - name: Display provisioning banner
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Provisioning {{ ansible_hostname }}
+          Role: {{ role }}
+          IP: {{ internal_ip }}
+          ========================================
+
+    - name: Wait for system to be ready
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      tags: [always]
+
+  roles:
+    # Common role - all VMs
+    - role: common
+      tags: [common, always]
+
+    # Vault client - all VMs need Vault integration
+    - role: vault-client
+      tags: [vault, common]
+
+    # Docker - for VMs that use containerized services
+    - role: docker
+      when: "'sip_proxies' in group_names or 'pbx_servers' in group_names"
+      tags: [docker, common]
+
+    # Fail2ban - native installation on all VMs
+    - role: fail2ban
+      when: security.fail2ban.enabled | default(true)
+      tags: [fail2ban, security, common]
+
+    # Monitoring - all VMs
+    - role: monitoring
+      tags: [monitoring, common]
+
+# SIP Proxy VMs
+- name: Provision SIP proxy servers
+  hosts: sip_proxies
+  become: yes
+  gather_facts: no
+  strategy: free
+
+  roles:
+    # OpenSIPS
+    - role: opensips
+      when: opensips_enabled | default(false)
+      tags: [opensips, sip]
+
+    # Kamailio (Phase 1.5)
+    - role: kamailio
+      when: kamailio_enabled | default(false)
+      tags: [kamailio, sip]
+
+# PBX VMs
+- name: Provision PBX servers
+  hosts: pbx_servers
+  become: yes
+  gather_facts: no
+  strategy: free
+
+  roles:
+    # Asterisk
+    - role: asterisk
+      when: asterisk_enabled | default(false)
+      tags: [asterisk, pbx]
+
+    # FreeSWITCH (Phase 2.5)
+    - role: freeswitch
+      when: freeswitch_enabled | default(false)
+      tags: [freeswitch, pbx]
+
+    # NFS client for call recordings
+    - role: nfs-client
+      tags: [nfs, storage]
+
+# Media VMs
+- name: Provision media servers
+  hosts: media_servers
+  become: yes
+  gather_facts: no
+  strategy: free
+
+  roles:
+    # RTPEngine (native installation, not Docker)
+    - role: rtpengine
+      tags: [rtpengine, media]
+
+    # NFS server for call recordings
+    - role: nfs-server
+      tags: [nfs, storage]
+
+# Post-provisioning tasks
+- name: Post-provisioning validation
+  hosts: voip_vms
+  become: yes
+  gather_facts: no
+
+  tasks:
+    - name: Verify Vault connectivity
+      ansible.builtin.uri:
+        url: "{{ vault_addr }}/v1/sys/health"
+        method: GET
+        status_code: [200, 429, 473, 501, 503]
+      delegate_to: localhost
+      run_once: yes
+      tags: [validate]
+
+    - name: Verify PostgreSQL connectivity
+      ansible.builtin.wait_for:
+        host: "{{ postgres_host }}"
+        port: 5432
+        timeout: 10
+      delegate_to: localhost
+      run_once: yes
+      tags: [validate]
+
+    - name: Verify Redis connectivity
+      ansible.builtin.wait_for:
+        host: "{{ redis_host }}"
+        port: 6379
+        timeout: 10
+      delegate_to: localhost
+      run_once: yes
+      tags: [validate]
+
+    - name: Display provisioning summary
+      ansible.builtin.debug:
+        msg: |
+          ========================================
+          Provisioning Complete!
+          ========================================
+
+          Next steps:
+          1. Configure extensions in Asterisk
+          2. Add SIP users to database
+          3. Run tests: ./tests/run-phase1-tests.sh
+
+          Useful commands:
+          - OpenSIPS: opensips-cli -x mi ps
+          - Asterisk: asterisk -rx "core show channels"
+          - RTPEngine: rtpengine-ctl list
+      run_once: yes
+      tags: [always]

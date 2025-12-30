@@ -1,0 +1,74 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Asterisk Dialplan - voip-stack
+;
+; This is an example dialplan for Asterisk
+; The actual dialplan is templated by Ansible from:
+; ansible/roles/asterisk/templates/extensions.conf.j2
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[general]
+static=yes
+writeprotect=no
+clearglobalvars=no
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Internal Context - Extension to Extension Calling
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[internal]
+; Extension pattern: 1XXX
+exten => _1XXX,1,NoOp(Call from ${CALLERID(num)} to ${EXTEN})
+  same => n,Set(CHANNEL(secure_bridge_signaling)=1)
+  same => n,Set(CHANNEL(secure_bridge_media)=1)
+  same => n,Dial(PJSIP/${EXTEN},30,rtT)
+  same => n,Hangup()
+
+; Voicemail access (Phase 2)
+; exten => *97,1,VoiceMailMain(${CALLERID(num)}@default)
+
+; Echo test
+exten => *43,1,NoOp(Echo Test)
+  same => n,Answer()
+  same => n,Echo()
+  same => n,Hangup()
+
+; Music on hold test
+exten => *44,1,NoOp(Music On Hold Test)
+  same => n,Answer()
+  same => n,MusicOnHold()
+  same => n,Hangup()
+
+; Call recording test
+exten => *45,1,NoOp(Call Recording Test)
+  same => n,Answer()
+  same => n,Set(MIXMONITOR_FILENAME=${UNIQUEID}.wav)
+  same => n,MixMonitor(/mnt/recordings/${MIXMONITOR_FILENAME},b)
+  same => n,Playback(beep)
+  same => n,Echo()
+  same => n,StopMixMonitor()
+  same => n,Hangup()
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; From OpenSIPS Context
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[from-opensips]
+; Calls routed from OpenSIPS
+exten => _1XXX,1,NoOp(Call from OpenSIPS to ${EXTEN})
+  same => n,Goto(internal,${EXTEN},1)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Hangup Handler (CDR)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[hangup_handler]
+exten => h,1,NoOp(Call Hangup: ${CDR(disposition)})
+  same => n,Return()
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Future: Conference Bridges (Phase 2)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; [conferences]
+; exten => _2XXX,1,ConfBridge(${EXTEN})
+;   same => n,Hangup()

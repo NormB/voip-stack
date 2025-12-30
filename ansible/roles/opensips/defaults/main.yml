@@ -1,0 +1,215 @@
+---
+# OpenSIPS Role - Default Variables
+
+# Installation method: 'source', 'package', or 'docker'
+opensips_install_method: docker
+
+# ============================================================================
+# Docker Configuration (when opensips_install_method: docker)
+# ============================================================================
+# Docker image to use (override in group_vars/all.yml)
+opensips_docker_image: "192.168.64.1:3000/devadmin/opensips:3.5-arm64"
+
+# Docker compose directory
+opensips_docker_compose_dir: "/opt/opensips"
+
+# Pull image on every deploy
+opensips_docker_pull_always: false
+
+# Optional sidecars
+opensips_haproxy_enabled: false
+opensips_proxysql_enabled: false
+
+# HAProxy and ProxySQL images (if enabled)
+haproxy_docker_image: "haproxy:2.8-alpine"
+proxysql_docker_image: "proxysql/proxysql:2.5.5"
+
+# ============================================================================
+# Source Compilation Configuration (when opensips_install_method: source)
+# ============================================================================
+
+# OpenSIPS version and source
+opensips_version: "3.5.1"
+opensips_git_repo: "https://github.com/OpenSIPS/opensips.git"
+opensips_git_branch: "3.5"
+
+# Forgejo mirror for faster builds (optional, set to empty string to disable)
+# Configure this after setting up the mirror in Forgejo
+opensips_forgejo_mirror: ""
+# Example: "http://192.168.64.1:3000/gator/opensips.git"
+
+# Build configuration
+opensips_build_dir: "/usr/local/src/opensips"
+opensips_prefix: "/"
+opensips_config_dir: "/etc/opensips"
+opensips_run_dir: "/var/run/opensips"
+opensips_log_dir: "/var/log/opensips"
+
+# Compiler settings for performance
+opensips_compile_jobs: "{{ ansible_facts['processor_vcpus'] | default(2) }}"
+# Note: -fPIC is required for ARM64 shared library compilation
+opensips_cflags: "-O2 -march=armv8-a -fPIC"
+
+# Modules to compile (db_postgres is required for our setup)
+opensips_modules:
+  # Core modules (always included)
+  - db_postgres
+  - cachedb_redis
+  - httpd
+  - json
+  - proto_tls
+  - proto_wss
+  - tls_mgm
+  - tls_openssl
+
+  # SIP processing modules
+  - dispatcher
+  - drouting
+  - dialog
+  - registrar
+  - usrloc
+  - auth
+  - auth_db
+
+  # Routing and load balancing
+  - load_balancer
+  - topology_hiding
+  - nat_traversal
+  - rtpproxy
+
+  # Media and RTP
+  - rtpengine
+  - mediaproxy
+
+  # CDR and accounting
+  - acc
+  - acc_json
+
+  # HEP/Homer integration
+  - proto_hep
+  - sipcapture
+
+  # Utilities
+  - cfgutils
+  - exec
+  - rest_client
+  - regex
+
+# Modules to exclude from compilation
+opensips_exclude_modules:
+  - db_mysql
+  - db_oracle
+  - db_berkeley
+  - db_sqlite
+  - db_unixodbc
+  - snmpstats
+  - mi_xmlrpc
+  - osp
+  - aaa_diameter
+  - aaa_radius
+  - ldap
+  - lua
+  - perl
+  - db_perlvdb
+  - python
+  - java
+  - carrierroute
+  - mmgeoip
+  - h350
+  - presence
+  - presence_callinfo
+  - presence_dialoginfo
+  - presence_mwi
+  - presence_xml
+  - pua
+  - pua_bla
+  - pua_dialoginfo
+  - pua_mi
+  - pua_reginfo
+  - pua_usrloc
+  - pua_xmpp
+  - rls
+  - xcap
+  - xcap_client
+  # JWT/AKA - require libjwt
+  - auth_jwt
+  - auth_aka
+  - aka_av_diameter
+  # Compression - requires zlib static
+  - compression
+  # Others with external deps
+  - cachedb_cassandra
+  - cachedb_couchbase
+  - cachedb_memcached
+  - cachedb_mongodb
+  - event_kafka
+  - event_rabbitmq
+  - rabbitmq
+  - rabbitmq_consumer
+  - http2d
+  - launch_darkly
+  - identity
+  - stir_shaken
+  - sngtc
+  - jabber
+  - xmpp
+  - cgrates
+  - freeswitch
+  - freeswitch_scripting
+  # Network/protocol modules with external deps
+  - proto_ipsec
+  - proto_sctp
+  - proto_smpp
+  # TLS WolfSSL - requires autoreconf to build from source
+  - tls_wolfssl
+  # Other modules with missing deps
+  - mi_xmlrpc_ng
+  - event_xmlrpc
+
+# Service configuration
+opensips_user: opensips
+opensips_group: opensips
+opensips_listen_interfaces:
+  - "udp:{{ internal_ip | default('0.0.0.0') }}:{{ opensips_sip_port | default(5060) }}"
+  - "tcp:{{ internal_ip | default('0.0.0.0') }}:{{ opensips_sip_port | default(5060) }}"
+
+# Database configuration
+opensips_db_host: "{{ postgres_host | default('192.168.64.1') }}"
+opensips_db_port: 5432
+opensips_db_name: "opensips"
+opensips_db_user: "opensips"
+# Password fetched from Vault at runtime
+
+# Redis configuration for caching
+opensips_redis_host: "{{ redis_host | default('192.168.64.1') }}"
+opensips_redis_port: 6379
+
+# RTPEngine configuration
+opensips_rtpengine_socket: "udp:{{ hostvars['media-1']['internal_ip'] | default('192.168.64.20') }}:2223"
+
+# Logging
+opensips_log_level: 3
+opensips_log_stderror: "no"
+opensips_log_facility: "LOG_LOCAL0"
+
+# Memory settings (in MB)
+opensips_shared_memory: 128
+opensips_private_memory: 32
+
+# Process settings
+opensips_children: 4
+opensips_tcp_children: 4
+
+# TLS settings
+opensips_tls_enabled: true
+opensips_tls_cert_dir: "/etc/opensips/tls"
+# Certificates generated from Vault PKI
+
+# Homer/HEP integration
+opensips_hep_enabled: true
+opensips_hep_capture_id: 1
+opensips_homer_host: "{{ homer_host | default('192.168.64.1') }}"
+opensips_homer_port: 9060
+
+# Cleanup old source on reinstall
+opensips_clean_build: false

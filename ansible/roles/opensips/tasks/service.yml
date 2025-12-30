@@ -1,0 +1,53 @@
+---
+# OpenSIPS Service Tasks
+
+- name: Template systemd service file
+  ansible.builtin.template:
+    src: opensips.service.j2
+    dest: /etc/systemd/system/opensips.service
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - reload systemd
+    - restart opensips
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Enable OpenSIPS service
+  ansible.builtin.systemd:
+    name: opensips
+    enabled: yes
+  become: true
+
+- name: Start OpenSIPS service
+  ansible.builtin.systemd:
+    name: opensips
+    state: started
+  become: true
+  register: opensips_start
+
+- name: Wait for OpenSIPS to be ready
+  ansible.builtin.wait_for:
+    port: "{{ opensips_sip_port | default(5060) }}"
+    host: "{{ internal_ip | default('127.0.0.1') }}"
+    timeout: 30
+  when: opensips_start.changed
+
+- name: Verify OpenSIPS is running
+  ansible.builtin.shell: |
+    systemctl is-active opensips && \
+    opensips-cli -x mi ps 2>/dev/null | head -10 || \
+    opensipsctl ps 2>/dev/null | head -10 || \
+    ss -nlup | grep -E ":{{ opensips_sip_port | default(5060) }}"
+  register: opensips_status
+  changed_when: false
+  failed_when: false
+
+- name: Display OpenSIPS status
+  ansible.builtin.debug:
+    msg: "{{ opensips_status.stdout_lines }}"

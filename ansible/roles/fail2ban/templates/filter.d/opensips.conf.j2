@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Fail2ban filter for OpenSIPS SIP Proxy
+# Detects authentication failures, registration attacks, and SIP scanning
+
+[INCLUDES]
+before = common.conf
+
+[Definition]
+_daemon = opensips
+
+# Match authentication failures and common attack patterns
+failregex = ^.*opensips.*AUTH_FAILED.*from\s+<HOST>.*$
+            ^.*opensips.*authentication.*failed.*<HOST>.*$
+            ^.*opensips.*REGISTER.*from.*<HOST>.*failed.*$
+            ^.*opensips.*<HOST>.*401\s+Unauthorized.*$
+            ^.*opensips.*<HOST>.*403\s+Forbidden.*$
+            ^.*opensips.*<HOST>.*407\s+Proxy Authentication Required.*$
+            ^.*opensips.*<HOST>.*User-Agent:.*(scanner|friendly-scanner|sipcli|sipvicious|sip-scan).*$
+
+# Lines to ignore
+ignoreregex =

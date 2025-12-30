@@ -1,0 +1,201 @@
+---
+# Global variables for all hosts
+# voip-stack Infrastructure
+
+# Environment
+environment: development
+
+# SIP domain
+sip_domain: sip.local
+
+# devstack-core endpoints (infrastructure services on Mac host)
+devstack_core:
+  vault:
+    host: 192.168.64.1
+    port: 8200
+    scheme: http
+    address: "http://192.168.64.1:8200"
+
+  postgres:
+    host: 192.168.64.1
+    port: 5432
+    admin_user: postgres
+
+  redis:
+    host: 192.168.64.1
+    port: 6379
+
+  rabbitmq:
+    host: 192.168.64.1
+    port: 5672
+    management_port: 15672
+    user: admin
+
+  prometheus:
+    host: 192.168.64.1
+    port: 9090
+
+  grafana:
+    host: 192.168.64.1
+    port: 3001
+
+  loki:
+    host: 192.168.64.1
+    port: 3100
+
+  homer:
+    host: 192.168.64.1
+    hep_port: 9060
+    web_port: 9080
+
+  forgejo:
+    host: 192.168.64.1
+    port: 3000
+    registry: "192.168.64.1:3000/gator"
+
+# ============================================================================
+# Installation Methods
+# ============================================================================
+# OpenSIPS: docker (fast iteration via pre-built images)
+# Asterisk: docker (fast iteration via pre-built images)
+# RTPEngine: native (requires kernel module)
+# Fail2ban: native (monitors host logs, applies iptables rules)
+
+opensips_install_method: docker
+asterisk_install_method: docker
+rtpengine_install_method: package
+
+# Docker images (from Forgejo registry)
+opensips_docker_image: "192.168.64.1:3000/devadmin/opensips:3.5-arm64"
+asterisk_docker_image: "192.168.64.1:3000/devadmin/asterisk:20-arm64"
+
+# ============================================================================
+# Security
+# ============================================================================
+security:
+  fail2ban:
+    enabled: true
+    aggressive_mode: false
+    default_bantime: "1h"
+    default_findtime: "10m"
+    default_maxretry: 5
+    # SIP-specific settings
+    sip_bantime: "2h"
+    sip_maxretry: 3
+    # Recidive (repeat offenders)
+    recidive_enabled: true
+    recidive_bantime: "1w"
+
+  firewall:
+    enabled: false  # Phase 2
+    default_policy: drop
+
+# ============================================================================
+# Database configuration
+# ============================================================================
+databases:
+  opensips:
+    name: opensips
+    user: opensips
+  asterisk:
+    name: asterisk
+    user: asterisk
+  homer:
+    name: homer
+    user: homer
+
+# ============================================================================
+# TLS/PKI configuration
+# ============================================================================
+tls:
+  vault_pki_path: pki_voip
+  vault_pki_role: voip-server
+  cert_ttl: 8760h  # 1 year
+  key_size: 2048
+  cert_dir: /etc/ssl/voip
+  renewal_threshold_days: 30
+
+# ============================================================================
+# Monitoring
+# ============================================================================
+monitoring:
+  node_exporter:
+    enabled: true
+    port: 9100
+
+  promtail:
+    enabled: true
+    version: 2.9.0
+    config_dir: /etc/promtail
+    positions_file: /var/lib/promtail/positions.yaml
+
+# ============================================================================
+# Docker configuration (for VoIP containers on VMs)
+# ============================================================================
+docker:
+  enabled: true
+  version: "latest"
+  compose_version: "2.24.0"
+  data_root: /var/lib/docker
+  log_driver: json-file
+  log_opts:
+    max-size: "100m"
+    max-file: "3"
+
+# ============================================================================
+# Logging
+# ============================================================================
+logging:
+  syslog_enabled: true
+  remote_syslog: false
+  log_rotation:
+    enabled: true
+    max_size: 100M
+    max_age: 30
+    compress: true
+
+# ============================================================================
+# NTP configuration
+# ============================================================================
+ntp:
+  enabled: true
+  servers:
+    - 0.pool.ntp.org
+    - 1.pool.ntp.org
+    - 2.pool.ntp.org
+
+# Timezone
+timezone: America/New_York
+
+# ============================================================================
+# System tuning
+# ============================================================================
+system:
+  kernel_tuning: true
+  swappiness: 10
+  file_max: 65536
+  max_map_count: 262144
+
+# ============================================================================
+# Testing extensions
+# ============================================================================
+test_extensions:
+  - extension: "1001"
+    password_vault_path: "secret/extensions/1001"
+  - extension: "1002"
+    password_vault_path: "secret/extensions/1002"
+
+# ============================================================================
+# Ansible managed message
+# ============================================================================
+ansible_managed_message: |
+  ################################################################
+  # This file is managed by Ansible - DO NOT EDIT MANUALLY!
+  #
+  # Repository: voip-stack
+  # Generated: {{ ansible_date_time.iso8601 }}
+  # Managed host: {{ ansible_hostname }}
+  #
+  # To make changes, edit the template in:
+  # ansible/roles/<role>/templates/<template>.j2
+  ################################################################

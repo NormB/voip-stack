@@ -1,0 +1,32 @@
+# {{ ansible_managed_message | default('Ansible managed') }}
+# Vault Agent configuration for {{ inventory_hostname }}
+
+vault {
+  address = "{{ devstack_core.vault.address | default('http://192.168.64.1:8200') }}"
+}
+
+auto_auth {
+  method "approle" {
+    config = {
+      role_id_file_path   = "/etc/vault/role-id"
+      secret_id_file_path = "/etc/vault/secret-id"
+      remove_secret_id_file_after_reading = false
+    }
+  }
+
+  sink "file" {
+    config = {
+      path = "/var/lib/vault/token"
+      mode = 0640
+    }
+  }
+}
+
+cache {
+  use_auto_auth_token = true
+}
+
+listener "unix" {
+  address     = "/var/lib/vault/agent.sock"
+  tls_disable = true
+}

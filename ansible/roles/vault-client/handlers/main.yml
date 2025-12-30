@@ -1,0 +1,11 @@
+---
+# Vault client role handlers
+
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: restart vault-agent
+  ansible.builtin.systemd:
+    name: vault-agent
+    state: restarted

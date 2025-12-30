@@ -1,0 +1,53 @@
+---
+# OpenSIPS Configuration Tasks
+
+- name: Template main OpenSIPS configuration
+  ansible.builtin.template:
+    src: opensips.cfg.j2
+    dest: "{{ opensips_config_dir }}/opensips.cfg"
+    owner: "{{ opensips_user }}"
+    group: "{{ opensips_group }}"
+    mode: '0640'
+    backup: yes
+  become: true
+  notify: restart opensips
+
+- name: Validate OpenSIPS configuration
+  ansible.builtin.shell: docker exec opensips opensips -c -f /etc/opensips/opensips.cfg 2>&1
+  register: config_check
+  changed_when: false
+  failed_when: config_check.rc != 0
+  become: true
+
+- name: Display configuration validation
+  ansible.builtin.debug:
+    msg: "Configuration validation: {{ 'PASSED' if config_check.rc == 0 else 'FAILED' }}"
+
+- name: Configure rsyslog for OpenSIPS
+  ansible.builtin.copy:
+    dest: /etc/rsyslog.d/opensips.conf
+    content: |
+      # OpenSIPS logging
+      local0.*                       {{ opensips_log_dir }}/opensips.log
+    mode: '0644'
+  become: true
+  notify: restart rsyslog
+
+- name: Configure logrotate for OpenSIPS
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/opensips
+    content: |
+      {{ opensips_log_dir }}/*.log {
+          daily
+          rotate 14
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0640 {{ opensips_user }} {{ opensips_group }}
+          postrotate
+              /usr/bin/systemctl reload opensips > /dev/null 2>&1 || true
+          endscript
+      }
+    mode: '0644'
+  become: true

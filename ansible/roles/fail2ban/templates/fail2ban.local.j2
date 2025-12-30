@@ -1,0 +1,17 @@
+# {{ ansible_managed }}
+# Fail2ban local configuration
+# This file overrides fail2ban.conf settings
+
+[Definition]
+loglevel = {{ fail2ban_loglevel }}
+logtarget = {{ fail2ban_logtarget }}
+
+# Socket for client communication
+socket = /var/run/fail2ban/fail2ban.sock
+
+# PID file
+pidfile = /var/run/fail2ban/fail2ban.pid
+
+# Database for persistent bans across restarts
+dbfile = /var/lib/fail2ban/fail2ban.sqlite3
+dbpurgeage = 1d

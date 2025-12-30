@@ -1,0 +1,104 @@
+# {{ ansible_managed }}
+# OpenSIPS Docker Compose Configuration
+# Deployed on: {{ inventory_hostname }}
+
+version: '3.8'
+
+services:
+  opensips:
+    image: {{ opensips_docker_image | default('localhost:3000/gator/opensips:3.5-arm64') }}
+    container_name: opensips
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    user: opensips
+    command: ["-F"]
+    volumes:
+      - {{ opensips_config_dir }}/opensips.cfg:/etc/opensips/opensips.cfg:ro
+      - {{ opensips_config_dir }}/tls:/etc/opensips/tls:ro
+      - {{ opensips_log_dir }}:/var/log/opensips:rw
+      - opensips_run:/var/run/opensips:rw
+    environment:
+      # Database connection (retrieved from Vault at config time)
+      - OPENSIPS_DB_HOST={{ opensips_db_host }}
+      - OPENSIPS_DB_PORT={{ opensips_db_port }}
+      - OPENSIPS_DB_NAME={{ opensips_db_name }}
+      - OPENSIPS_DB_USER={{ opensips_db_user }}
+      # Redis connection
+      - OPENSIPS_REDIS_HOST={{ opensips_redis_host }}
+      - OPENSIPS_REDIS_PORT={{ opensips_redis_port }}
+    healthcheck:
+      test: ["CMD", "nc", "-z", "-u", "{{ internal_ip }}", "5060"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+        labels: "service,hostname"
+    labels:
+      - "service=opensips"
+      - "role=sip_proxy"
+      - "hostname={{ inventory_hostname }}"
+
+{% if opensips_haproxy_enabled | default(false) %}
+  haproxy:
+    image: {{ haproxy_docker_image | default('haproxy:2.8-alpine') }}
+    container_name: haproxy
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - {{ opensips_config_dir }}/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - {{ opensips_config_dir }}/tls:/etc/haproxy/tls:ro
+    depends_on:
+      opensips:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    labels:
+      - "service=haproxy"
+      - "role=load_balancer"
+{% endif %}
+
+{% if opensips_proxysql_enabled | default(false) %}
+  proxysql:
+    image: {{ proxysql_docker_image | default('proxysql/proxysql:2.5.5-arm64') }}
+    container_name: proxysql
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - {{ opensips_config_dir }}/proxysql.cnf:/etc/proxysql.cnf:ro
+      - proxysql_data:/var/lib/proxysql:rw
+    healthcheck:
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-P", "6032", "-uadmin", "-padmin", "-e", "SELECT 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    labels:
+      - "service=proxysql"
+      - "role=db_proxy"
+{% endif %}
+
+volumes:
+  opensips_run:
+    driver: local
+{% if opensips_proxysql_enabled | default(false) %}
+  proxysql_data:
+    driver: local
+{% endif %}

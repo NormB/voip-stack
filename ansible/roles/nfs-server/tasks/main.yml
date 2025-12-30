@@ -1,0 +1,5 @@
+---
+# nfs-server role - placeholder
+- name: nfs-server placeholder
+  ansible.builtin.debug:
+    msg: "nfs-server role not yet implemented"

@@ -1,0 +1,12 @@
+---
+# Fail2ban Role - Handlers
+
+- name: Restart fail2ban
+  ansible.builtin.systemd:
+    name: fail2ban
+    state: restarted
+  become: true
+
+- name: Reload fail2ban
+  ansible.builtin.command: fail2ban-client reload
+  become: true

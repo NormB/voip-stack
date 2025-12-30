@@ -1,0 +1,56 @@
+---
+# RTPEngine Service Tasks
+# {{ ansible_managed }}
+
+- name: Ensure RTPEngine service is enabled and started
+  ansible.builtin.systemd:
+    name: rtpengine
+    state: started
+    enabled: yes
+    daemon_reload: yes
+  become: true
+  when: rtpengine_enabled
+  tags: [rtpengine, service]
+
+- name: Wait for RTPEngine to be ready
+  ansible.builtin.wait_for:
+    port: 2223
+    host: "{{ internal_ip | default('127.0.0.1') }}"
+    timeout: 30
+  tags: [rtpengine, verify]
+
+- name: Verify RTPEngine is running
+  ansible.builtin.command: rtpengine-ctl list totals
+  register: rtpengine_status
+  changed_when: false
+  become: true
+  tags: [rtpengine, verify]
+
+- name: Display RTPEngine status
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      RTPENGINE STATUS
+      ========================================
+      {{ rtpengine_status.stdout }}
+      ========================================
+  tags: [rtpengine, verify]
+
+- name: Verify kernel module is active
+  ansible.builtin.shell: |
+    echo "Kernel module:"
+    lsmod | grep xt_RTPENGINE || echo "Not loaded"
+    echo ""
+    echo "Proc interface:"
+    cat /proc/rtpengine/{{ rtpengine_kernel_table }}/list 2>/dev/null || echo "Not available"
+  register: kernel_status
+  changed_when: false
+  become: true
+  when: rtpengine_kernel_module
+  tags: [rtpengine, verify]
+
+- name: Display kernel module status
+  ansible.builtin.debug:
+    msg: "{{ kernel_status.stdout_lines }}"
+  when: rtpengine_kernel_module
+  tags: [rtpengine, verify]

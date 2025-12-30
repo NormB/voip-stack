@@ -1,0 +1,188 @@
+---
+# Global variables for all hosts
+# Copy this file to all.yml and customize as needed
+# cp all.yml.example all.yml
+
+# Environment
+environment: development
+
+# SIP domain
+sip_domain: sip.local
+
+# devstack-core endpoints (infrastructure services on Mac host)
+devstack_core:
+  vault:
+    host: 192.168.64.1
+    port: 8200
+    scheme: http
+    address: "http://192.168.64.1:8200"
+
+  postgres:
+    host: 192.168.64.1
+    port: 5432
+    admin_user: postgres
+    # Admin password retrieved from Vault
+
+  redis:
+    host: 192.168.64.1
+    port: 6379
+    # Password retrieved from Vault
+
+  rabbitmq:
+    host: 192.168.64.1
+    port: 5672
+    management_port: 15672
+    user: admin
+    # Password retrieved from Vault
+
+  prometheus:
+    host: 192.168.64.1
+    port: 9090
+
+  grafana:
+    host: 192.168.64.1
+    port: 3001
+
+  loki:
+    host: 192.168.64.1
+    port: 3100
+
+  homer:
+    host: 192.168.64.1
+    hep_port: 9060
+    web_port: 9080
+
+# Database configuration
+databases:
+  opensips:
+    name: opensips
+    user: opensips
+    # Password from Vault: secret/opensips:db_password
+
+  kamailio:
+    name: kamailio
+    user: kamailio
+    # Password from Vault: secret/kamailio:db_password
+
+  asterisk:
+    name: asterisk
+    user: asterisk
+    # Password from Vault: secret/asterisk:db_password
+
+  freeswitch:
+    name: freeswitch
+    user: freeswitch
+    # Password from Vault: secret/freeswitch:db_password
+
+  homer:
+    name: homer
+    user: homer
+    # Password from Vault: secret/homer:db_password
+
+# TLS/PKI configuration
+tls:
+  vault_pki_path: pki_voip
+  vault_pki_role: voip-server
+  cert_ttl: 8760h  # 1 year
+  key_size: 2048
+  cert_dir: /etc/ssl/voip
+  renewal_threshold_days: 30
+
+# Monitoring
+monitoring:
+  node_exporter:
+    enabled: true
+    port: 9100
+
+  promtail:
+    enabled: true
+    version: 2.9.0
+    config_dir: /etc/promtail
+    positions_file: /var/lib/promtail/positions.yaml
+
+# Logging
+logging:
+  syslog_enabled: true
+  remote_syslog: false
+  log_rotation:
+    enabled: true
+    max_size: 100M
+    max_age: 30
+    compress: true
+
+# Security
+security:
+  fail2ban:
+    enabled: false  # Phase 2
+    ban_time: 3600
+    max_retry: 5
+
+  firewall:
+    enabled: false  # Phase 2
+    default_policy: drop
+
+# Backup
+backup:
+  enabled: false  # Phase 2
+  destination: /backup
+  retention_days: 30
+  schedule: "0 2 * * *"  # 2 AM daily
+
+# Testing extensions
+test_extensions:
+  - extension: "1001"
+    password_vault_path: "secret/extensions/1001"
+  - extension: "1002"
+    password_vault_path: "secret/extensions/1002"
+
+# Docker configuration (for containers on VMs)
+docker:
+  enabled: true
+  version: "latest"
+  compose_version: "2.23.0"
+  data_root: /var/lib/docker
+  log_driver: json-file
+  log_opts:
+    max-size: "10m"
+    max-file: "3"
+
+# NTP configuration
+ntp:
+  enabled: true
+  servers:
+    - 0.pool.ntp.org
+    - 1.pool.ntp.org
+    - 2.pool.ntp.org
+
+# Timezone
+timezone: America/New_York
+
+# System tuning
+system:
+  kernel_tuning: true
+  swappiness: 10
+  file_max: 65536
+  max_map_count: 262144
+
+# Package repositories
+repositories:
+  opensips:
+    key_url: https://apt.opensips.org/opensips-org.gpg
+    repo: "deb https://apt.opensips.org bookworm 3.4-releases"
+
+  kamailio:
+    key_url: http://deb.kamailio.org/kamailiodebkey.gpg
+    repo: "deb http://deb.kamailio.org/kamailio57 bookworm main"
+
+# Ansible configuration
+ansible_managed_message: |
+  ################################################################
+  # This file is managed by Ansible - DO NOT EDIT MANUALLY!
+  #
+  # Repository: voip-stack
+  # Generated: {{ ansible_date_time.iso8601 }}
+  # Managed host: {{ ansible_hostname }}
+  #
+  # To make changes, edit the template in:
+  # ansible/roles/<role>/templates/<template>.j2
+  ################################################################

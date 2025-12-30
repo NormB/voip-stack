@@ -1,0 +1,230 @@
+# Environment and Secrets
+.env
+*.env.local
+*.env.bak
+*.env.backup
+*.env.orig
+*.env.save
+*.env.tmp
+!.env.example
+
+# Vault keys and tokens (CRITICAL - never commit!)
+.vault-keys/
+vault-keys/
+**/keys.json
+**/root-token
+vault-token*
+*.vault
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.csr
+*.secret
+secrets/
+credentials/
+
+# VMs and virtualization
+*.utm
+*.qcow2
+*.vmdk
+*.vdi
+.vagrant/
+packer_cache/
+
+# Logs
+*.log
+logs/
+*.pcap
+*.cap
+ansible.log
+
+# Call recordings
+recordings/
+*.wav
+*.mp3
+*.gsm
+*.ulaw
+*.alaw
+
+# Backups
+backups/
+*.backup
+*.bak
+*.sql.gz
+*.tar.gz
+*.archive
+*.dump
+
+# Database dumps
+*.sql
+
+# Docker volumes and data
+volumes/
+data/
+*.db
+*.rdb
+dump.rdb
+appendonly.aof
+
+# Private documentation (WIP files, task tracking, internal docs)
+docs/.private/
+.private/
+
+# Internal/local infrastructure documentation (not for public repo)
+docs/guides/FORGEJO_SETUP.md
+docs/guides/FORGEJO-MIRRORS.md
+docs/guides/GIT_WORKFLOW.md
+docs/guides/ANSIBLE-PROVISIONING.md
+docs/reference/PRE_COMMIT_CHECKLIST.md
+docs/reference/SECURITY_AUDIT.md
+docs/archive/SANITIZATION_COMPLETE.md
+docs/VM-CREDENTIALS.md
+
+# Work directory (temporary files, development artifacts)
+work/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.AppleDouble
+.LSOverride
+Icon
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.iml
+
+# AI Tool Configuration
+.claude/
+.claude.md
+claude.md
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+.pytest_cache/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+!scripts/lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Ansible
+*.retry
+.ansible/
+
+# Terraform (if used in future)
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+
+# Node.js (if used for testing tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing artifacts
+test-results/
+coverage/
+.tox/
+htmlcov/
+.coverage
+
+# Test cache
+.pytest_cache/
+
+# Generated files
+generated/
+
+# Local configuration overrides
+local.yml
+local.cfg
+override.conf
+*-local.*
+*.local
+
+# CDR exports
+cdrs/
+exports/
+
+# SIPp scenarios (keep templates, ignore generated)
+tests/sipp/scenarios/*-generated.xml
+
+# Monitoring and metrics data (local)
+prometheus-data/
+grafana-data/
+loki-data/
+
+# Documentation build artifacts
+docs/_build/
+docs/.doctrees/
+site/
+
+# Local notes and scratch files
+NOTES.md
+TODO.md
+SCRATCH.md
+*.notes
+*.scratch
+
+# ISO and image files
+iso/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+/tmp/
+*.pid
+*.seed
+*.pid.lock
+*.swp
+*.swo
+*~
+
+# Secrets baseline (pre-commit)
+!.secrets.baseline
+
+# macOS
+Icon
+

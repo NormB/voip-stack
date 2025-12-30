@@ -1,0 +1,128 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Asterisk PJSIP Configuration - voip-stack
+;
+; This is an example configuration file for Asterisk PJSIP
+; The actual configuration is templated by Ansible from:
+; ansible/roles/asterisk/templates/pjsip.conf.j2
+;
+; This example shows the structure for endpoints
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[global]
+type=global
+max_forwards=70
+keep_alive_interval=90
+contact_expiration_check_interval=30
+disable_multi_domain=yes
+
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+external_media_address=192.168.1.100
+external_signaling_address=192.168.1.100
+local_net=192.168.64.0/24
+
+[transport-tcp]
+type=transport
+protocol=tcp
+bind=0.0.0.0:5060
+
+[transport-tls]
+type=transport
+protocol=tls
+bind=0.0.0.0:5061
+cert_file=/etc/ssl/voip/cert.pem
+priv_key_file=/etc/ssl/voip/key.pem
+ca_list_file=/etc/ssl/voip/ca.pem
+method=tlsv1_2
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Endpoint Templates
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[endpoint_internal](!)
+type=endpoint
+context=internal
+disallow=all
+allow=ulaw,alaw,g722,opus
+direct_media=no
+trust_id_inbound=yes
+device_state_busy_at=2
+dtmf_mode=rfc4733
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+ice_support=yes
+media_encryption=srtp
+media_encryption_optimistic=yes
+
+[auth_userpass](!)
+type=auth
+auth_type=userpass
+
+[aor_dynamic](!)
+type=aor
+max_contacts=3
+remove_existing=yes
+minimum_expiration=60
+maximum_expiration=3600
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Test Extensions (1001, 1002)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Extension 1001
+[1001](endpoint_internal)
+type=endpoint
+auth=1001
+aors=1001
+callerid="Extension 1001" <1001>
+
+[1001](auth_userpass)
+type=auth
+username=1001
+password=CHANGE_ME_PASSWORD_FROM_VAULT
+
+[1001](aor_dynamic)
+type=aor
+
+; Extension 1002
+[1002](endpoint_internal)
+type=endpoint
+auth=1002
+aors=1002
+callerid="Extension 1002" <1002>
+
+[1002](auth_userpass)
+type=auth
+username=1002
+password=CHANGE_ME_PASSWORD_FROM_VAULT
+
+[1002](aor_dynamic)
+type=aor
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; SIP Trunk to OpenSIPS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[opensips]
+type=endpoint
+context=from-opensips
+disallow=all
+allow=ulaw,alaw,g722,opus
+direct_media=no
+trust_id_inbound=yes
+from_user=${EXTEN}
+from_domain=sip.local
+
+[opensips]
+type=identify
+endpoint=opensips
+match=192.168.64.10
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Realtime Configuration (PostgreSQL)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Additional endpoints can be stored in PostgreSQL
+; See: /etc/asterisk/extconfig.conf

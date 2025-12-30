@@ -1,0 +1,53 @@
+# {{ ansible_managed }}
+# Asterisk Docker Compose Configuration
+# Deployed on: {{ inventory_hostname }}
+
+version: '3.8'
+
+services:
+  asterisk:
+    image: {{ asterisk_docker_image | default('localhost:3000/gator/asterisk:20-arm64') }}
+    container_name: asterisk
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    user: asterisk
+    volumes:
+      # Configuration
+      - {{ asterisk_config_dir }}:/etc/asterisk:ro
+      # Logs (for fail2ban monitoring)
+      - {{ asterisk_log_dir }}:/var/log/asterisk:rw
+      # Spool (voicemail, recordings)
+      - {{ asterisk_spool_dir }}:/var/spool/asterisk:rw
+      # Runtime
+      - asterisk_run:/var/run/asterisk:rw
+      # Data (sounds, moh, etc.)
+      - asterisk_data:/var/lib/asterisk:rw
+    environment:
+      # Database connection
+      - ASTERISK_DB_HOST={{ asterisk_db_host }}
+      - ASTERISK_DB_PORT={{ asterisk_db_port }}
+      - ASTERISK_DB_NAME={{ asterisk_db_name }}
+      - ASTERISK_DB_USER={{ asterisk_db_user }}
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+        labels: "service,hostname"
+    labels:
+      - "service=asterisk"
+      - "role=pbx"
+      - "hostname={{ inventory_hostname }}"
+
+volumes:
+  asterisk_run:
+    driver: local
+  asterisk_data:
+    driver: local

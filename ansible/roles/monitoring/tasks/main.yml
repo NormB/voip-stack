@@ -1,0 +1,5 @@
+---
+# monitoring role - placeholder
+- name: monitoring placeholder
+  ansible.builtin.debug:
+    msg: "monitoring role not yet implemented"

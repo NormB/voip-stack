@@ -1,0 +1,39 @@
+---
+# Docker Role - Default Variables
+
+# Docker version (use 'latest' or specific version like '24.0')
+docker_version: latest
+
+# Docker Compose version
+docker_compose_version: "2.24.0"
+
+# Docker daemon configuration
+docker_daemon_config:
+  log-driver: "json-file"
+  log-opts:
+    max-size: "100m"
+    max-file: "3"
+  storage-driver: "overlay2"
+  live-restore: true
+  insecure-registries:
+    - "192.168.64.1:3000"
+
+# Users to add to docker group
+docker_users:
+  - "{{ ansible_user }}"
+
+# Enable Docker service at boot
+docker_enabled: true
+
+# Forgejo container registry (for pulling pre-built images)
+docker_registry_url: "{{ forgejo_url | default('http://192.168.64.1:3000') }}"
+docker_registry_user: "{{ forgejo_user | default('gator') }}"
+# Password should come from Vault
+# docker_registry_password: "{{ lookup('hashi_vault', 'secret=secret/data/forgejo:password') }}"
+
+# Prune settings
+docker_prune_enabled: true
+docker_prune_schedule: "weekly"
+
+# Network settings
+docker_default_network_mode: "host"  # For VoIP services that need direct network access

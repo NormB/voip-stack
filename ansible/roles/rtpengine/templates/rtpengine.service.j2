@@ -1,0 +1,51 @@
+# {{ ansible_managed }}
+# RTPEngine Systemd Service
+
+[Unit]
+Description=RTPEngine Media Proxy
+Documentation=https://github.com/sipwise/rtpengine
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+RuntimeDirectory=rtpengine
+RuntimeDirectoryMode=0755
+
+# Load kernel module before starting
+ExecStartPre=/sbin/modprobe xt_RTPENGINE
+ExecStartPre=/bin/bash -c 'echo "add {{ rtpengine_kernel_table }}" > /proc/rtpengine/control 2>/dev/null || true'
+
+# Setup iptables rules
+ExecStartPre=/bin/bash -c 'iptables -N rtpengine 2>/dev/null || true'
+ExecStartPre=/bin/bash -c 'iptables -D INPUT -j rtpengine 2>/dev/null || true'
+ExecStartPre=/sbin/iptables -I INPUT -j rtpengine
+ExecStartPre=/bin/bash -c 'iptables -D rtpengine -p udp -j RTPENGINE --id {{ rtpengine_kernel_table }} 2>/dev/null || true'
+ExecStartPre=/sbin/iptables -A rtpengine -p udp -j RTPENGINE --id {{ rtpengine_kernel_table }}
+
+# Start RTPEngine
+ExecStart=/usr/sbin/rtpengine --config-file={{ rtpengine_config_dir }}/rtpengine.conf
+
+# Cleanup on stop
+ExecStopPost=/bin/bash -c 'echo "del {{ rtpengine_kernel_table }}" > /proc/rtpengine/control 2>/dev/null || true'
+ExecStopPost=/bin/bash -c 'iptables -D rtpengine -p udp -j RTPENGINE --id {{ rtpengine_kernel_table }} 2>/dev/null || true'
+
+# Restart policy
+Restart=always
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# Limits
+LimitNOFILE=65535
+LimitNPROC=65535
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rtpengine
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,321 @@
+# {{ ansible_managed }}
+#
+# OpenSIPS {{ opensips_version }} Configuration
+# voip-stack SIP Proxy (sip-1)
+#
+# This configuration provides:
+# - SIP registration proxy
+# - PostgreSQL backend for user authentication
+# - Redis caching for location/usrloc
+# - RTPEngine media relay integration
+# - Homer/HEP SIP capture
+#
+
+####### Global Parameters #########
+
+/* Uncomment these to enable debugging
+debug_mode=yes
+log_level=4
+log_stderror=yes
+*/
+
+log_level={{ opensips_log_level }}
+stderror_enabled={{ opensips_log_stderror }}
+syslog_enabled=yes
+syslog_facility={{ opensips_log_facility }}
+
+udp_workers={{ opensips_children }}
+tcp_workers={{ opensips_tcp_children }}
+
+####### Listeners #########
+
+{% for listen in opensips_listen_interfaces %}
+socket={{ listen }}
+{% endfor %}
+
+{% if opensips_tls_enabled %}
+socket=tls:{{ internal_ip | default('0.0.0.0') }}:{{ opensips_sip_tls_port | default(5061) }}
+{% endif %}
+
+####### Modules Section ########
+
+# Set module path
+mpath="/lib64/opensips/modules/"
+
+#### Transport Modules ####
+loadmodule "proto_udp.so"
+{% if opensips_tls_enabled %}
+loadmodule "proto_tls.so"
+{% endif %}
+
+#### Core Modules ####
+loadmodule "signaling.so"
+loadmodule "sl.so"
+loadmodule "tm.so"
+loadmodule "rr.so"
+loadmodule "maxfwd.so"
+loadmodule "sipmsgops.so"
+loadmodule "textops.so"
+loadmodule "uri.so"
+
+#### Database ####
+loadmodule "db_postgres.so"
+
+#### Registration and Location ####
+loadmodule "usrloc.so"
+loadmodule "registrar.so"
+loadmodule "auth.so"
+loadmodule "auth_db.so"
+
+#### Dialog ####
+loadmodule "dialog.so"
+
+#### Routing ####
+loadmodule "dispatcher.so"
+
+#### RTPEngine ####
+loadmodule "rtpengine.so"
+
+#### HEP/Homer ####
+{% if opensips_hep_enabled %}
+loadmodule "proto_hep.so"
+loadmodule "siptrace.so"
+{% endif %}
+
+#### Utilities ####
+loadmodule "exec.so"
+loadmodule "cfgutils.so"
+
+{% if opensips_tls_enabled %}
+#### TLS Management ####
+loadmodule "tls_mgm.so"
+{% endif %}
+
+####### Module Parameters ########
+
+# -- TM params --
+modparam("tm", "fr_timeout", 5)
+modparam("tm", "fr_inv_timeout", 30)
+modparam("tm", "restart_fr_on_each_reply", 0)
+
+# -- RR params --
+modparam("rr", "append_fromtag", 1)
+modparam("rr", "enable_double_rr", 1)
+
+# -- PostgreSQL connection --
+modparam("db_postgres", "exec_query_threshold", 50000)
+
+# -- usrloc params --
+modparam("usrloc", "db_mode", 2)
+modparam("usrloc", "db_url", "postgres://{{ opensips_db_user }}:XXXXX@{{ opensips_db_host }}:{{ opensips_db_port }}/{{ opensips_db_name }}")
+modparam("usrloc", "nat_bflag", "NAT")
+modparam("usrloc", "working_mode_preset", "single-instance-sql-write-through")
+
+# -- auth params --
+modparam("auth_db", "db_url", "postgres://{{ opensips_db_user }}:XXXXX@{{ opensips_db_host }}:{{ opensips_db_port }}/{{ opensips_db_name }}")
+modparam("auth_db", "calculate_ha1", 1)
+modparam("auth_db", "password_column", "password")
+modparam("auth_db", "user_column", "username")
+modparam("auth_db", "domain_column", "domain")
+
+# -- registrar params --
+modparam("registrar", "tcp_persistent_flag", "TCP_PERSISTENT")
+modparam("registrar", "max_contacts", 10)
+modparam("registrar", "default_expires", 3600)
+modparam("registrar", "min_expires", 60)
+modparam("registrar", "max_expires", 7200)
+
+# -- dialog params --
+modparam("dialog", "db_mode", 2)
+modparam("dialog", "db_url", "postgres://{{ opensips_db_user }}:XXXXX@{{ opensips_db_host }}:{{ opensips_db_port }}/{{ opensips_db_name }}")
+
+# -- dispatcher params (RTPEngine) --
+modparam("dispatcher", "db_url", "postgres://{{ opensips_db_user }}:XXXXX@{{ opensips_db_host }}:{{ opensips_db_port }}/{{ opensips_db_name }}")
+modparam("dispatcher", "ds_ping_method", "OPTIONS")
+modparam("dispatcher", "ds_probing_mode", 1)
+modparam("dispatcher", "ds_ping_interval", 30)
+
+# -- rtpengine params --
+modparam("rtpengine", "rtpengine_sock", "{{ opensips_rtpengine_socket }}")
+modparam("rtpengine", "rtpengine_disable_tout", 30)
+modparam("rtpengine", "rtpengine_tout_ms", 1000)
+
+{% if opensips_hep_enabled %}
+# -- HEP/Homer params --
+modparam("proto_hep", "hep_id", "[hep_dst] {{ opensips_homer_host }}:{{ opensips_homer_port }};transport=udp;version=3")
+modparam("siptrace", "trace_id", "[tid]uri=hep:hep_dst")
+{% endif %}
+
+{% if opensips_tls_enabled %}
+# -- TLS params --
+modparam("tls_mgm", "server_domain", "default")
+modparam("tls_mgm", "match_ip_address", "[default]*")
+modparam("tls_mgm", "match_sip_domain", "[default]*")
+modparam("tls_mgm", "certificate", "[default]{{ opensips_tls_cert_dir }}/server.crt")
+modparam("tls_mgm", "private_key", "[default]{{ opensips_tls_cert_dir }}/server.key")
+modparam("tls_mgm", "ca_list", "[default]{{ opensips_tls_cert_dir }}/ca.crt")
+modparam("tls_mgm", "verify_cert", "[default]0")
+modparam("tls_mgm", "require_cert", "[default]0")
+{% endif %}
+
+####### Routing Logic ########
+
+# Main SIP request routing logic
+route {
+    # Initial sanity checks
+    if (!mf_process_maxfwd_header(10)) {
+        send_reply(483, "Too Many Hops");
+        exit;
+    }
+
+{% if opensips_hep_enabled %}
+    # HEP tracing
+    sip_trace("tid");
+{% endif %}
+
+    # Record route for dialogs
+    if (is_method("INVITE|SUBSCRIBE") && !has_totag()) {
+        record_route();
+    }
+
+    # Sequential requests - route them directly
+    if (has_totag()) {
+        # Handle in-dialog requests
+        if (loose_route()) {
+            if (is_method("INVITE")) {
+                # RTPEngine for re-INVITEs
+                rtpengine_manage("replace-origin replace-session-connection");
+            }
+            route(relay);
+            exit;
+        }
+
+        if (is_method("ACK")) {
+            if (t_check_trans()) {
+                t_relay();
+                exit;
+            }
+            exit;
+        }
+
+        send_reply(404, "Not Found");
+        exit;
+    }
+
+    # Handle cancels
+    if (is_method("CANCEL")) {
+        if (t_check_trans()) {
+            t_relay();
+        }
+        exit;
+    }
+
+    # Absorb retransmissions
+    t_check_trans();
+
+    # Preloaded route checking
+    if (loose_route()) {
+        xlog("L_ERR", "Attempt to route with preloaded Route's [$fu/$tu/$ru/$ci]");
+        if (!is_method("ACK")) {
+            send_reply(403, "Preload Route Denied");
+        }
+        exit;
+    }
+
+    # Handle REGISTER requests
+    if (is_method("REGISTER")) {
+        route(register);
+        exit;
+    }
+
+    # Authenticate all other requests
+    if (!(is_method("OPTIONS") || is_method("NOTIFY"))) {
+        if (!proxy_authorize("", "subscriber")) {
+            proxy_challenge("", "auth");
+            exit;
+        }
+        consume_credentials();
+    }
+
+    # Handle INVITE
+    if (is_method("INVITE")) {
+        # Create dialog
+        create_dialog();
+
+        # RTPEngine media handling
+        rtpengine_manage("replace-origin replace-session-connection ICE=remove");
+    }
+
+    # Route the request
+    route(location);
+}
+
+# REGISTER handling
+route[register] {
+    # Authenticate
+    if (!www_authorize("", "subscriber")) {
+        www_challenge("", "auth");
+        exit;
+    }
+
+    # Check if authenticated user matches From
+    if (!check_from()) {
+        xlog("L_WARN", "Authentication failure: From mismatch [$fu vs $au]");
+        send_reply(403, "Forbidden - Use From=ID");
+        exit;
+    }
+
+    consume_credentials();
+
+    # Save location
+    if (!save("location")) {
+        xlog("L_ERR", "Failed to save location for $fu");
+        send_reply(500, "Server Error");
+        exit;
+    }
+
+    exit;
+}
+
+# User location routing
+route[location] {
+    # Look up user location
+    if (!lookup("location")) {
+        if ($retcode == -1 || $retcode == -3) {
+            # User not found
+            send_reply(404, "User Not Found");
+            exit;
+        }
+    }
+
+    route(relay);
+}
+
+# Relay route
+route[relay] {
+    if (is_method("INVITE")) {
+        t_on_reply("reply_with_sdp");
+        t_on_failure("missed_call");
+    }
+
+    if (!t_relay()) {
+        send_reply(500, "Relay Error");
+    }
+}
+
+# Reply handling for INVITE
+onreply_route[reply_with_sdp] {
+    if (has_body("application/sdp")) {
+        rtpengine_manage("replace-origin replace-session-connection ICE=remove");
+    }
+{% if opensips_hep_enabled %}
+    sip_trace("tid");
+{% endif %}
+}
+
+# Failure route
+failure_route[missed_call] {
+    if (t_was_cancelled()) {
+        exit;
+    }
+}

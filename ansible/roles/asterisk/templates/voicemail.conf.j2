@@ -1,0 +1,49 @@
+; {{ ansible_managed }}
+; Asterisk Voicemail Configuration
+;
+
+[general]
+format={{ asterisk_voicemail_format | default('wav49|gsm|wav') }}
+serveremail={{ asterisk_voicemail_email | default('asterisk@localhost') }}
+attach=yes
+skipms=3000
+maxsilence=10
+silencethreshold=128
+maxlogins=3
+maxmsg={{ asterisk_voicemail_max_msg | default(100) }}
+maxsecs={{ asterisk_voicemail_max_secs | default(300) }}
+minsecs=3
+maxgreet=60
+review=yes
+operator=yes
+envelope=yes
+saycid=yes
+cidinternalcontexts=internal
+sayduration=yes
+saydurationm=2
+sendvoicemail=yes
+searchcontexts=yes
+pagerfromstring=Asterisk PBX
+charset=UTF-8
+pbxskip=
+usedirectory=yes
+emailsubject=New voicemail ${VM_MSGNUM} in mailbox ${VM_MAILBOX}
+emailbody=Dear ${VM_NAME},\n\nYou have a new voicemail message:\n\n  From: ${VM_CALLERID}\n  Date: ${VM_DATE}\n  Duration: ${VM_DUR}\n\nDial *98 to access your voicemail.\n\n--\nAsterisk PBX
+
+[zonemessages]
+eastern=America/New_York|'vm-received' Q 'digits/at' IMp
+central=America/Chicago|'vm-received' Q 'digits/at' IMp
+mountain=America/Denver|'vm-received' Q 'digits/at' IMp
+pacific=America/Los_Angeles|'vm-received' Q 'digits/at' IMp
+utc=UTC|'vm-received' Q 'digits/at' IMp
+
+[default]
+; Default voicemail context
+; Extensions configured here or via realtime
+{% if asterisk_static_extensions is defined %}
+{% for ext in asterisk_static_extensions %}
+{% if ext.voicemail | default(true) %}
+{{ ext.number }} => {{ ext.voicemail_pin | default('1234') }},{{ ext.name | default('Extension ' + ext.number) }},{{ ext.email | default('') }},,tz=utc
+{% endif %}
+{% endfor %}
+{% endif %}

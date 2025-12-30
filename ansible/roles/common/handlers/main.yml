@@ -1,0 +1,7 @@
+---
+# Common role handlers
+
+- name: restart ntp
+  ansible.builtin.systemd:
+    name: ntp
+    state: restarted

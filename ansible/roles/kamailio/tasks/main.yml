@@ -1,0 +1,5 @@
+---
+# kamailio role - placeholder
+- name: kamailio placeholder
+  ansible.builtin.debug:
+    msg: "kamailio role not yet implemented"

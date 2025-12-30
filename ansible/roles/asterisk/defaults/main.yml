@@ -1,0 +1,143 @@
+---
+# Asterisk Role - Default Variables
+
+# Installation method: 'source', 'package', or 'docker'
+asterisk_install_method: docker
+
+# ============================================================================
+# Docker Configuration (when asterisk_install_method: docker)
+# ============================================================================
+# Docker image to use
+asterisk_docker_image: "192.168.64.1:3000/devadmin/asterisk:20-arm64"
+
+# Docker compose directory
+asterisk_docker_compose_dir: "/opt/asterisk"
+
+# Pull image on every deploy
+asterisk_docker_pull_always: false
+
+# ============================================================================
+# General Configuration
+# ============================================================================
+asterisk_enabled: true
+asterisk_version: "20"
+
+# Directories
+asterisk_config_dir: "/etc/asterisk"
+asterisk_run_dir: "/var/run/asterisk"
+asterisk_log_dir: "/var/log/asterisk"
+asterisk_spool_dir: "/var/spool/asterisk"
+
+# User/Group
+asterisk_user: asterisk
+asterisk_group: asterisk
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+# SIP port (internal traffic from OpenSIPS only)
+asterisk_sip_port: 5080
+asterisk_sip_tls_port: 5081
+
+# AMI - Asterisk Manager Interface
+asterisk_ami_enabled: true
+asterisk_ami_port: 5038
+asterisk_ami_bindaddr: "{{ internal_ip | default('127.0.0.1') }}"
+# AMI credentials from Vault
+# asterisk_ami_user: "admin"
+# asterisk_ami_secret: "{{ lookup('hashi_vault', 'secret=secret/data/asterisk:ami_password') }}"
+
+# ARI - Asterisk REST Interface
+asterisk_ari_enabled: true
+asterisk_ari_port: 8088
+asterisk_ari_bindaddr: "{{ internal_ip | default('127.0.0.1') }}"
+# ARI credentials from Vault
+# asterisk_ari_user: "admin"
+# asterisk_ari_password: "{{ lookup('hashi_vault', 'secret=secret/data/asterisk:ari_password') }}"
+
+# ============================================================================
+# Database Configuration (PostgreSQL)
+# ============================================================================
+asterisk_db_host: "{{ postgres_host | default('192.168.64.1') }}"
+asterisk_db_port: 5432
+asterisk_db_name: "asterisk"
+asterisk_db_user: "asterisk"
+# Password from Vault
+# asterisk_db_password: "{{ lookup('hashi_vault', 'secret=secret/data/asterisk:db_password') }}"
+
+# Enable realtime configuration
+asterisk_realtime_enabled: true
+
+# ============================================================================
+# PJSIP Configuration
+# ============================================================================
+# Transports
+asterisk_pjsip_transports:
+  - name: transport-udp
+    protocol: udp
+    bind: "{{ internal_ip | default('0.0.0.0') }}:{{ asterisk_sip_port }}"
+  - name: transport-tcp
+    protocol: tcp
+    bind: "{{ internal_ip | default('0.0.0.0') }}:{{ asterisk_sip_port }}"
+
+# OpenSIPS trunk (for SIP proxy connection)
+asterisk_opensips_host: "{{ hostvars['sip-1']['internal_ip'] | default('192.168.64.10') }}"
+
+# RTPEngine socket for media handling
+asterisk_rtpengine_socket: "udp:{{ hostvars['media-1']['internal_ip'] | default('192.168.64.20') }}:2223"
+
+# ============================================================================
+# RTP Configuration
+# ============================================================================
+# RTP port range (handled by RTPEngine, but needed for direct media)
+asterisk_rtp_start: 10000
+asterisk_rtp_end: 20000
+
+# ============================================================================
+# Voicemail Configuration
+# ============================================================================
+asterisk_voicemail_enabled: true
+asterisk_voicemail_format: "wav|wav49|gsm"
+asterisk_voicemail_max_msg: 100
+asterisk_voicemail_max_secs: 300
+
+# ============================================================================
+# Call Recording
+# ============================================================================
+asterisk_recording_enabled: true
+asterisk_recording_dir: "/var/spool/asterisk/recording"
+asterisk_recording_format: "wav"
+
+# NFS mount for recordings (optional)
+asterisk_recording_nfs_enabled: false
+asterisk_recording_nfs_server: "192.168.64.1"
+asterisk_recording_nfs_path: "/srv/recordings"
+
+# ============================================================================
+# CDR Configuration
+# ============================================================================
+asterisk_cdr_enabled: true
+asterisk_cdr_backend: "pgsql"
+
+# ============================================================================
+# Logging
+# ============================================================================
+asterisk_log_level: "notice"
+asterisk_log_verbose: 3
+
+# Security logging for fail2ban
+asterisk_security_log_enabled: true
+
+# ============================================================================
+# Memory and Performance
+# ============================================================================
+asterisk_max_calls: 100
+asterisk_max_open_files: 16384
+
+# ============================================================================
+# Source Compilation (when asterisk_install_method: source)
+# ============================================================================
+asterisk_git_repo: "https://github.com/asterisk/asterisk.git"
+asterisk_git_branch: "{{ asterisk_version }}"
+asterisk_build_dir: "/usr/local/src/asterisk"
+asterisk_compile_jobs: "{{ ansible_facts['processor_vcpus'] | default(2) }}"

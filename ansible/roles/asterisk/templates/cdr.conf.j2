@@ -1,0 +1,25 @@
+; {{ ansible_managed }}
+; Asterisk CDR Configuration
+;
+
+[general]
+enable=yes
+unanswered=yes
+congestion=yes
+endbeforehexten=no
+initiatedseconds=yes
+batch=yes
+size=100
+time=300
+safeshutdown=yes
+
+{% if asterisk_cdr_backend == 'pgsql' %}
+; PostgreSQL CDR storage configured in cdr_pgsql.conf
+{% elif asterisk_cdr_backend == 'csv' %}
+; CSV CDR output
+[csv]
+usegmtime=no
+loguniqueid=yes
+loguserfield=yes
+accountlogs=yes
+{% endif %}

@@ -1,0 +1,36 @@
+# {{ ansible_managed }}
+# Fail2ban filter for Asterisk PBX
+# Detects authentication failures, registration attacks, and SIP scanning
+
+[INCLUDES]
+before = common.conf
+
+[Definition]
+_daemon = asterisk
+
+# Match PJSIP authentication failures
+# Example: "NOTICE[12345]: res_pjsip/pjsip_distributor.c:676 log_failed_request: Request 'REGISTER' from '<sip:user@host>' failed for '1.2.3.4:5060'"
+# Example: "SECURITY[12345]: res_security_log.c:156 security_event_cb: FailedACL - [...] RemoteAddress='IPV4/UDP/1.2.3.4/5060'"
+
+__failre_auth = (?:NOTICE|WARNING|SECURITY).*(?:failed for|FailedACL|InvalidAccountID|ChallengeResponseFailed|InvalidPassword|UnexpectedAddress).*'(?:IPV4/[^/]+/)?<HOST>(?:/\d+)?'
+
+# Legacy chan_sip (deprecated but might still appear)
+__failre_chansip = NOTICE.*chan_sip\.c.*Registration from.*failed for '<HOST>(?::\d+)?'
+
+# Security log events
+__failre_security = SECURITY.*(?:InvalidAccountID|ChallengeResponseFailed|InvalidPassword).*RemoteAddress='IPV4/[^/]+/<HOST>/\d+'
+
+# AMI authentication failures
+__failre_ami = SECURITY.*(?:InvalidPassword|AuthMethodNotAllowed).*RemoteAddress='<HOST>'
+
+failregex = ^%(__failre_auth)s\s*$
+            ^%(__failre_chansip)s\s*$
+            ^%(__failre_security)s\s*$
+            ^%(__failre_ami)s\s*$
+            ^.*Request '(?:REGISTER|INVITE)' from .* failed for '<HOST>(?::\d+)?'.*$
+            ^.*<HOST>.*failed to authenticate.*$
+
+ignoreregex =
+
+# Date/time pattern for Asterisk logs
+datepattern = {^LN-BEG}

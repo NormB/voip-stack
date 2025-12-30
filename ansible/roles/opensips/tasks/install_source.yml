@@ -1,0 +1,324 @@
+---
+# OpenSIPS Source Compilation Installation
+
+- name: Display OpenSIPS installation info
+  ansible.builtin.debug:
+    msg: |
+      Installing OpenSIPS {{ opensips_version }} from source
+      Build directory: {{ opensips_build_dir }}
+      Using {{ opensips_compile_jobs }} parallel jobs
+      {% if opensips_forgejo_mirror %}
+      Source: Forgejo mirror ({{ opensips_forgejo_mirror }})
+      {% else %}
+      Source: GitHub ({{ opensips_git_repo }})
+      {% endif %}
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+
+- name: Install essential build dependencies
+  ansible.builtin.apt:
+    name:
+      # Core build tools
+      - build-essential
+      - gcc
+      - make
+      - bison
+      - flex
+      - git
+      # SSL/TLS
+      - openssl
+      - libssl-dev
+      # XML and parsing
+      - libxml2-dev
+      - libpcre3-dev
+      - libexpat1-dev
+      # HTTP and network
+      - libcurl4-openssl-dev
+      - libmicrohttpd-dev
+      # JSON
+      - libjson-c-dev
+      # Database clients
+      - libpq-dev
+      - libhiredis-dev
+      # Compression
+      - zlib1g-dev
+      # UUID
+      - uuid-dev
+      # ncurses for menuconfig
+      - libncurses5-dev
+      # Misc utilities
+      - pkg-config
+      - wget
+      - curl
+    state: present
+  become: true
+
+- name: Install WolfSSL development library (for TLS module)
+  ansible.builtin.apt:
+    name:
+      - libwolfssl-dev
+    state: present
+  become: true
+  ignore_errors: yes
+  register: wolfssl_install
+
+- name: Note about WolfSSL
+  ansible.builtin.debug:
+    msg: "WolfSSL not available in repos, TLS will use OpenSSL instead"
+  when: wolfssl_install.failed | default(false)
+
+- name: Create build directory
+  ansible.builtin.file:
+    path: "{{ opensips_build_dir }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+  become: true
+
+- name: Clean previous build (if requested)
+  ansible.builtin.file:
+    path: "{{ opensips_build_dir }}/opensips"
+    state: absent
+  become: true
+  when: opensips_clean_build | bool
+
+- name: Check if OpenSIPS source exists
+  ansible.builtin.stat:
+    path: "{{ opensips_build_dir }}/opensips/.git"
+  register: opensips_source
+
+- name: Clone OpenSIPS from Forgejo mirror
+  ansible.builtin.git:
+    repo: "{{ opensips_forgejo_mirror }}"
+    dest: "{{ opensips_build_dir }}/opensips"
+    version: "{{ opensips_git_branch }}"
+    depth: 1
+    force: yes
+  when:
+    - opensips_forgejo_mirror | length > 0
+    - not opensips_source.stat.exists
+  register: clone_forgejo
+  ignore_errors: yes
+
+- name: Clone OpenSIPS from GitHub (fallback)
+  ansible.builtin.git:
+    repo: "{{ opensips_git_repo }}"
+    dest: "{{ opensips_build_dir }}/opensips"
+    version: "{{ opensips_git_branch }}"
+    depth: 1
+    force: yes
+  when:
+    - (clone_forgejo.failed | default(true)) or (opensips_forgejo_mirror | length == 0)
+    - not opensips_source.stat.exists
+
+- name: Update existing source
+  ansible.builtin.shell: |
+    cd {{ opensips_build_dir }}/opensips
+    git fetch --depth 1 origin {{ opensips_git_branch }}
+    git reset --hard FETCH_HEAD
+  when: opensips_source.stat.exists
+  changed_when: false
+
+- name: Display source information
+  ansible.builtin.shell: |
+    cd {{ opensips_build_dir }}/opensips
+    echo "Branch: $(git rev-parse --abbrev-ref HEAD)"
+    echo "Commit: $(git rev-parse --short HEAD)"
+    echo "Date: $(git log -1 --format=%ci)"
+  register: git_info
+  changed_when: false
+
+- name: Show source info
+  ansible.builtin.debug:
+    msg: "{{ git_info.stdout_lines }}"
+
+- name: Build include modules list
+  ansible.builtin.set_fact:
+    opensips_include_modules_str: "{{ opensips_modules | join(' ') }}"
+
+- name: Build exclude modules list
+  ansible.builtin.set_fact:
+    opensips_exclude_modules_str: "{{ opensips_exclude_modules | join(' ') }}"
+
+- name: Display compilation settings
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      COMPILATION SETTINGS
+      ========================================
+      CFLAGS: {{ opensips_cflags }}
+      Jobs: {{ opensips_compile_jobs }}
+      Prefix: {{ opensips_prefix }}
+      Include modules: {{ opensips_include_modules_str }}
+      ========================================
+
+- name: Clean previous compilation
+  ansible.builtin.shell: |
+    cd {{ opensips_build_dir }}/opensips
+    echo ">>> Cleaning previous build artifacts..."
+    make clean || true
+    echo ">>> Clean complete"
+  become: true
+  changed_when: false
+
+- name: Start compilation notification
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      STARTING COMPILATION
+      ========================================
+      This will take several minutes (~7-10 min on ARM64 VM)
+      Compiling OpenSIPS core and {{ opensips_modules | length }} modules
+      ========================================
+
+- name: Compile OpenSIPS
+  ansible.builtin.shell: |
+    set -o pipefail
+    cd {{ opensips_build_dir }}/opensips
+    echo ">>> Starting compilation at $(date)"
+    echo ">>> Using CFLAGS: {{ opensips_cflags }}"
+    make \
+      prefix={{ opensips_prefix }} \
+      CFLAGS="{{ opensips_cflags }}" \
+      include_modules="{{ opensips_include_modules_str }}" \
+      exclude_modules="{{ opensips_exclude_modules_str }}" \
+      -j{{ opensips_compile_jobs }} \
+      all 2>&1 | tee /tmp/opensips_compile.log
+    exit_code=$?
+    echo ">>> Compilation finished at $(date) with exit code: $exit_code"
+    exit $exit_code
+  args:
+    chdir: "{{ opensips_build_dir }}/opensips"
+    executable: /bin/bash
+  become: true
+  register: compile_result
+  async: 1800
+  poll: 30
+
+- name: Save compilation log on failure
+  ansible.builtin.fetch:
+    src: /tmp/opensips_compile.log
+    dest: "/tmp/opensips_compile_{{ inventory_hostname }}.log"
+    flat: yes
+  when: compile_result.rc != 0
+  ignore_errors: yes
+
+- name: Display compilation failure details
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      COMPILATION FAILED
+      ========================================
+      Exit code: {{ compile_result.rc }}
+
+      Last 50 lines of output:
+      {{ compile_result.stdout_lines[-50:] | join('\n') }}
+
+      Full log saved to: /tmp/opensips_compile_{{ inventory_hostname }}.log
+      ========================================
+  when: compile_result.rc != 0
+
+- name: Fail if compilation failed
+  ansible.builtin.fail:
+    msg: "OpenSIPS compilation failed. Check the log above for details."
+  when: compile_result.rc != 0
+
+- name: Display compilation success
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      COMPILATION SUCCESSFUL
+      ========================================
+      Duration: {{ compile_result.delta | default('unknown') }}
+      ========================================
+  when: compile_result.rc == 0
+
+- name: Start installation notification
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      INSTALLING OpenSIPS
+      ========================================
+      Installing binaries and modules to {{ opensips_prefix }}
+      ========================================
+
+- name: Install OpenSIPS
+  ansible.builtin.shell: |
+    cd {{ opensips_build_dir }}/opensips
+    echo ">>> Installing OpenSIPS to prefix={{ opensips_prefix }}"
+    make \
+      prefix={{ opensips_prefix }} \
+      include_modules="{{ opensips_include_modules_str }}" \
+      exclude_modules="{{ opensips_exclude_modules_str }}" \
+      install 2>&1
+    echo ">>> Installation complete"
+  args:
+    chdir: "{{ opensips_build_dir }}/opensips"
+  become: true
+  register: install_result
+
+- name: Display installation result
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      INSTALLATION OUTPUT
+      ========================================
+      {{ install_result.stdout_lines[-20:] | join('\n') }}
+      ========================================
+
+- name: Verify OpenSIPS installation
+  ansible.builtin.shell: |
+    echo ">>> Verifying OpenSIPS binary..."
+    which opensips
+    opensips -V 2>&1 | head -10
+    echo ">>> Listing installed modules..."
+    ls -la /lib64/opensips/modules/ 2>/dev/null || ls -la /usr/lib/opensips/modules/ 2>/dev/null || ls -la {{ opensips_prefix }}/lib64/opensips/modules/ 2>/dev/null || echo "Modules directory not found in standard locations"
+  register: opensips_version_check
+  changed_when: false
+
+- name: Display verification results
+  ansible.builtin.debug:
+    msg: |
+      ========================================
+      VERIFICATION RESULTS
+      ========================================
+      {{ opensips_version_check.stdout }}
+      ========================================
+
+- name: Create OpenSIPS user
+  ansible.builtin.user:
+    name: "{{ opensips_user }}"
+    system: yes
+    shell: /usr/sbin/nologin
+    home: "{{ opensips_run_dir }}"
+    create_home: no
+  become: true
+
+- name: Create OpenSIPS directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ opensips_user }}"
+    group: "{{ opensips_group }}"
+    mode: '0755'
+  become: true
+  loop:
+    - "{{ opensips_config_dir }}"
+    - "{{ opensips_config_dir }}/tls"
+    - "{{ opensips_run_dir }}"
+    - "{{ opensips_log_dir }}"
+
+- name: Copy default configuration
+  ansible.builtin.copy:
+    src: "{{ opensips_build_dir }}/opensips/etc/opensips.cfg"
+    dest: "{{ opensips_config_dir }}/opensips.cfg.default"
+    remote_src: yes
+    owner: root
+    group: root
+    mode: '0644'
+  become: true

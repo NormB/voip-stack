@@ -1,0 +1,13 @@
+#!/bin/bash
+# {{ ansible_managed }}
+# RTPEngine CLI wrapper
+
+RTPENGINE_CLI="{{ rtpengine_listen_cli }}"
+
+# Check if rtpengine-ctl binary exists
+if command -v /usr/bin/rtpengine-ctl &>/dev/null; then
+    exec /usr/bin/rtpengine-ctl -ip "$RTPENGINE_CLI" "$@"
+else
+    # Fallback to netcat-based communication
+    echo "$@" | nc -q 1 ${RTPENGINE_CLI/:/ }
+fi

@@ -1,0 +1,78 @@
+# {{ ansible_managed }}
+# Fail2ban Jail Configuration for VoIP Stack
+# Host: {{ inventory_hostname }}
+
+[DEFAULT]
+# Global defaults
+bantime = {{ fail2ban_default_bantime }}
+findtime = {{ fail2ban_default_findtime }}
+maxretry = {{ fail2ban_default_maxretry }}
+
+# Ignore internal network
+ignoreip = {{ fail2ban_ignoreip | join(' ') }}
+
+# Backend for log file monitoring
+backend = {{ fail2ban_backend }}
+
+{% if fail2ban_destemail %}
+# Email settings (if configured)
+destemail = {{ fail2ban_destemail }}
+sender = {{ fail2ban_sender }}
+mta = {{ fail2ban_mta }}
+{% endif %}
+
+# Default action
+action = {{ fail2ban_action }}
+
+# ============================================================================
+# SSH Jail
+# ============================================================================
+[sshd]
+enabled = {{ fail2ban_ssh_enabled | lower }}
+port = {{ fail2ban_ssh_port }}
+logpath = %(sshd_log)s
+maxretry = {{ fail2ban_ssh_maxretry }}
+bantime = {{ fail2ban_ssh_bantime }}
+
+{% if fail2ban_opensips_enabled | bool %}
+# ============================================================================
+# OpenSIPS Jail
+# ============================================================================
+[opensips]
+enabled = true
+port = {{ fail2ban_opensips_port }}
+filter = opensips
+logpath = {{ fail2ban_opensips_logpath }}
+maxretry = {{ fail2ban_aggressive_maxretry if fail2ban_aggressive_mode else fail2ban_opensips_maxretry }}
+findtime = {{ fail2ban_aggressive_findtime if fail2ban_aggressive_mode else fail2ban_opensips_findtime }}
+bantime = {{ fail2ban_aggressive_bantime if fail2ban_aggressive_mode else fail2ban_opensips_bantime }}
+action = voip-iptables[name=opensips, port="%(port)s", protocol=all]
+{% endif %}
+
+{% if fail2ban_asterisk_enabled | bool %}
+# ============================================================================
+# Asterisk Jail
+# ============================================================================
+[asterisk]
+enabled = true
+port = {{ fail2ban_asterisk_port }}
+filter = asterisk
+logpath = {{ fail2ban_asterisk_logpath }}
+maxretry = {{ fail2ban_aggressive_maxretry if fail2ban_aggressive_mode else fail2ban_asterisk_maxretry }}
+findtime = {{ fail2ban_aggressive_findtime if fail2ban_aggressive_mode else fail2ban_asterisk_findtime }}
+bantime = {{ fail2ban_aggressive_bantime if fail2ban_aggressive_mode else fail2ban_asterisk_bantime }}
+action = voip-iptables[name=asterisk, port="%(port)s", protocol=all]
+{% endif %}
+
+{% if fail2ban_recidive_enabled %}
+# ============================================================================
+# Recidive Jail (repeat offenders)
+# ============================================================================
+[recidive]
+enabled = true
+logpath = /var/log/fail2ban.log
+banaction = %(banaction_allports)s
+bantime = {{ fail2ban_recidive_bantime }}
+findtime = {{ fail2ban_recidive_findtime }}
+maxretry = {{ fail2ban_recidive_maxretry }}
+{% endif %}

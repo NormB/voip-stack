@@ -1,0 +1,70 @@
+---
+# RTPEngine Source Installation
+# {{ ansible_managed }}
+
+- name: Check if RTPEngine source exists
+  ansible.builtin.stat:
+    path: "{{ rtpengine_build_dir }}/.git"
+  register: rtpengine_source
+  tags: [rtpengine, install, source]
+
+- name: Clone RTPEngine source
+  ansible.builtin.git:
+    repo: "{{ rtpengine_git_repo }}"
+    dest: "{{ rtpengine_build_dir }}"
+    version: "{{ rtpengine_version }}"
+    depth: 1
+  when: not rtpengine_source.stat.exists
+  tags: [rtpengine, install, source]
+
+- name: Build RTPEngine daemon
+  ansible.builtin.shell: |
+    cd {{ rtpengine_build_dir }}/daemon
+    make clean || true
+    make -j{{ ansible_facts['processor_vcpus'] | default(2) }}
+  args:
+    creates: "{{ rtpengine_build_dir }}/daemon/rtpengine"
+  become: true
+  async: 1200
+  poll: 30
+  tags: [rtpengine, install, source]
+
+- name: Install RTPEngine daemon
+  ansible.builtin.shell: |
+    cd {{ rtpengine_build_dir }}/daemon
+    make install
+  become: true
+  tags: [rtpengine, install, source]
+
+- name: Build RTPEngine kernel module
+  ansible.builtin.shell: |
+    cd {{ rtpengine_build_dir }}/kernel-module
+    make clean || true
+    make -j{{ ansible_facts['processor_vcpus'] | default(2) }}
+  args:
+    creates: "{{ rtpengine_build_dir }}/kernel-module/xt_RTPENGINE.ko"
+  become: true
+  async: 900
+  poll: 30
+  when: rtpengine_kernel_module
+  tags: [rtpengine, install, source, kernel]
+
+- name: Install RTPEngine kernel module
+  ansible.builtin.shell: |
+    cd {{ rtpengine_build_dir }}/kernel-module
+    make install
+    depmod -a
+  become: true
+  when: rtpengine_kernel_module
+  tags: [rtpengine, install, source, kernel]
+
+- name: Verify RTPEngine installation
+  ansible.builtin.command: rtpengine --version
+  register: rtpengine_version_check
+  changed_when: false
+  tags: [rtpengine, install, source, verify]
+
+- name: Display RTPEngine version
+  ansible.builtin.debug:
+    msg: "{{ rtpengine_version_check.stdout }}"
+  tags: [rtpengine, install, source, verify]

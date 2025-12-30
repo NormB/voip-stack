@@ -1,0 +1,62 @@
+---
+# OpenSIPS Package Installation (alternative to source)
+# Uses official OpenSIPS APT repository
+
+- name: Display OpenSIPS package installation info
+  ansible.builtin.debug:
+    msg: "Installing OpenSIPS from official APT repository"
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  become: true
+
+- name: Install gnupg for APT key management
+  ansible.builtin.apt:
+    name: gnupg
+    state: present
+  become: true
+
+- name: Add OpenSIPS APT key
+  ansible.builtin.apt_key:
+    url: https://apt.opensips.org/pubkey.gpg
+    state: present
+  become: true
+
+- name: Add OpenSIPS APT repository
+  ansible.builtin.apt_repository:
+    repo: "deb https://apt.opensips.org bookworm {{ opensips_version | regex_replace('\\.[0-9]+$', '') }}-releases main"
+    state: present
+    filename: opensips
+  become: true
+
+- name: Update apt cache after adding repository
+  ansible.builtin.apt:
+    update_cache: yes
+  become: true
+
+- name: Install OpenSIPS packages
+  ansible.builtin.apt:
+    name:
+      - opensips
+      - opensips-postgres-module
+      - opensips-restclient-module
+      - opensips-json-module
+      - opensips-tls-module
+      - opensips-http-modules
+      - opensips-dispatcher-module
+      - opensips-dialog-module
+      - opensips-rtpengine-module
+      - opensips-hep-module
+    state: present
+  become: true
+
+- name: Verify OpenSIPS installation
+  ansible.builtin.shell: opensips -V 2>&1 | head -5
+  register: opensips_version_check
+  changed_when: false
+
+- name: Display installed version
+  ansible.builtin.debug:
+    msg: "{{ opensips_version_check.stdout_lines }}"

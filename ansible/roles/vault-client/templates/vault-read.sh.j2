@@ -1,0 +1,33 @@
+#!/bin/bash
+# {{ ansible_managed_message | default('Ansible managed') }}
+# Helper script to read secrets from Vault
+
+set -euo pipefail
+
+VAULT_ADDR="{{ devstack_core.vault.address | default('http://192.168.64.1:8200') }}"
+VAULT_TOKEN_FILE="/var/lib/vault/token"
+
+if [ ! -f "$VAULT_TOKEN_FILE" ]; then
+    echo "Error: Vault token not found at $VAULT_TOKEN_FILE" >&2
+    echo "Ensure vault-agent is running and authenticated" >&2
+    exit 1
+fi
+
+VAULT_TOKEN=$(cat "$VAULT_TOKEN_FILE")
+
+if [ $# -lt 1 ]; then
+    echo "Usage: $0 <secret-path> [field]" >&2
+    echo "Example: $0 secret/data/myapp password" >&2
+    exit 1
+fi
+
+SECRET_PATH="$1"
+FIELD="${2:-}"
+
+export VAULT_ADDR VAULT_TOKEN
+
+if [ -n "$FIELD" ]; then
+    vault kv get -field="$FIELD" "$SECRET_PATH"
+else
+    vault kv get "$SECRET_PATH"
+fi

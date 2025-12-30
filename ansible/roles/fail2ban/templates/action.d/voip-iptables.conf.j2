@@ -1,0 +1,69 @@
+# {{ ansible_managed }}
+# Fail2ban action for VoIP services
+# Blocks both TCP and UDP traffic for SIP ports
+# Works with Docker containers using host networking
+
+[INCLUDES]
+before = iptables-common.conf
+
+[Definition]
+# Option: actionstart
+# Notes.: command executed on demand at the first ban (or at the start of Fail2Ban if actionstart_on_demand is set to false).
+actionstart = <iptables> -N f2b-<name>
+              <iptables> -A f2b-<name> -j <returntype>
+              <iptables> -I <chain> -p <protocol> --dport <port> -j f2b-<name>
+
+# Option: actionstop
+# Notes.: command executed at the stop of jail (or at the end of Fail2Ban)
+actionstop = <iptables> -D <chain> -p <protocol> --dport <port> -j f2b-<name>
+             <actionflush>
+             <iptables> -X f2b-<name>
+
+# Option: actioncheck
+# Notes.: command executed once before each actionban command
+actioncheck = <iptables> -n -L <chain> | grep -q 'f2b-<name>[ \t]'
+
+# Option: actionban
+# Notes.: command executed when banning an IP
+# Tags: <ip> - IP address
+actionban = <iptables> -I f2b-<name> 1 -s <ip> -j <blocktype>
+            # Also log the ban for audit purposes
+            logger -t fail2ban-<name> "Banned <ip> for <name>"
+
+# Option: actionunban
+# Notes.: command executed when unbanning an IP
+actionunban = <iptables> -D f2b-<name> -s <ip> -j <blocktype>
+              logger -t fail2ban-<name> "Unbanned <ip> for <name>"
+
+[Init]
+# Option: name
+# Notes.: specifies the name of the jail
+name = default
+
+# Option: port
+# Notes.: comma separated list of ports to block
+port = 5060
+
+# Option: protocol
+# Notes.: protocol for iptables (tcp, udp, all)
+# For VoIP, we typically want to block all protocols
+protocol = all
+
+# Option: chain
+# Notes.: iptables chain to insert rules into
+chain = INPUT
+
+# Option: returntype
+# Notes.: action to take for packets not matching ban rules
+# Default: RETURN (continue processing)
+returntype = RETURN
+
+# Option: blocktype
+# Notes.: action to take for banned IPs
+# Options: DROP, REJECT --reject-with icmp-port-unreachable
+# DROP is stealthier, REJECT is more informative
+blocktype = DROP
+
+# Option: iptables
+# Notes.: actual iptables command (use ip6tables for IPv6)
+iptables = iptables
